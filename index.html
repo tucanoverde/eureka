@@ -2127,48 +2127,22 @@ async function buscarContatosIA(munId) {
   if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
 
   try {
-    const prompt = `Busque na internet os contatos oficiais da prefeitura de ${m.municipio}, ${m.uf}, Brasil.
 
-Preciso encontrar:
-1. Nome do Secretário(a) de Educação atual (2024/2025)
-2. Email da Secretaria de Educação
-3. Telefone da Secretaria de Educação ou Prefeitura
-4. Email geral da Prefeitura
-5. Site oficial da Prefeitura
-
-Use web search para encontrar informações atualizadas. Priorize o site oficial da prefeitura (${m.municipio.toLowerCase().replace(/\s+/g,'')}${m.uf.toLowerCase()}.gov.br ou similar) e portais de transparência.
-
-Responda APENAS com JSON válido neste formato exato:
-{
-  "secretario_educacao": "Nome completo ou null",
-  "email_educacao": "email@exemplo.gov.br ou null",
-  "telefone": "(XX) XXXX-XXXX ou null",
-  "email_prefeitura": "email@exemplo.gov.br ou null",
-  "site_prefeitura": "https://... ou null",
-  "fonte": "URL de onde veio a informação"
-}`;
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/buscar-contatos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }]
-      })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({ municipio: m.municipio, uf: m.uf })
     });
 
-    const data = await response.json();
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Erro ${response.status}`);
+    }
 
-    // Extrai o texto final da resposta
-    const textos = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-
-    // Tenta parsear JSON
-    const jsonMatch = textos.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('IA não retornou JSON válido');
-
-    const contatos = JSON.parse(jsonMatch[0]);
+    const contatos = await response.json();
 
     // Preenche os campos automaticamente
     let atualizados = 0;
