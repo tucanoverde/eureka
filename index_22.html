@@ -1,0 +1,3607 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Eureka · Tucano Verde</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg: #f7f5f0;
+  --bg-elev: #ffffff;
+  --bg-card: #ffffff;
+  --ink: #0e1a14;
+  --ink-soft: #3b4a41;
+  --ink-dim: #6b7a71;
+  --ink-faint: #a8b4ab;
+  --line: #e5e0d4;
+  --line-strong: #d1ccbf;
+  --accent: #1e5f3c;
+  --accent-bright: #2d8456;
+  --accent-soft: #e8f0ea;
+  --warn: #b85c1a;
+  --warn-soft: #fbe9d7;
+  --danger: #a93226;
+  --danger-soft: #f8d7d3;
+  --gold: #b8892a;
+  --gold-soft: #f5ead0;
+  --blue-soft: #e3ebf4;
+  --blue: #2c5a8a;
+  
+  --farol-q: #c9302c;
+  --farol-m: #d77b2a;
+  --farol-mo: #b8892a;
+  --farol-f: #6b7a71;
+  --farol-nv: #a8b4ab;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  font-family: 'Instrument Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle at 20% 10%, rgba(30, 95, 60, 0.03) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 90%, rgba(184, 137, 42, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Typography */
+.display {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-feature-settings: 'ss01';
+}
+.mono { font-family: 'JetBrains Mono', monospace; font-feature-settings: 'zero', 'ss02'; }
+
+/* ==================== LOGIN ==================== */
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3rem 2.5rem;
+  box-shadow: 0 1px 0 rgba(14, 26, 20, 0.04), 0 40px 80px -40px rgba(14, 26, 20, 0.15);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.auth-brand .logo-mark {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 1.75rem;
+  color: var(--accent);
+  letter-spacing: -0.03em;
+}
+.auth-brand .logo-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.auth-card h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 2.25rem;
+  line-height: 1.05;
+  margin: 2rem 0 0.5rem;
+  letter-spacing: -0.025em;
+}
+.auth-card h1 em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--accent);
+}
+.auth-card .sub {
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.5rem;
+}
+.tab {
+  flex: 1;
+  padding: 0.75rem 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+}
+.tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.field { margin-bottom: 1rem; }
+.field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+.field input, .field select, .field textarea {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg-elev);
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  transition: border-color 0.15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(30, 95, 60, 0.1);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  background: var(--ink);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn:hover { background: var(--accent); }
+.btn.primary { background: var(--accent); }
+.btn.primary:hover { background: var(--accent-bright); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); }
+.btn.ghost:hover { background: var(--bg); border-color: var(--ink); }
+.btn.small { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+.btn.danger { background: var(--danger); }
+.btn.wide { width: 100%; }
+
+.message {
+  padding: 0.75rem 1rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.message.error { background: var(--danger-soft); color: var(--danger); }
+.message.success { background: var(--accent-soft); color: var(--accent); }
+.message.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* ==================== APP ==================== */
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar {
+  background: var(--ink);
+  color: var(--bg);
+  padding: 1.5rem 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-brand {
+  padding: 0 1.5rem 2rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 1.5rem;
+}
+.sidebar-brand .logo-mark {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 1.5rem;
+  color: white;
+  letter-spacing: -0.03em;
+  display: block;
+}
+.sidebar-brand .logo-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 0.25rem;
+}
+
+.nav-section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 0 1.5rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1.5rem;
+  color: rgba(255,255,255,0.75);
+  text-decoration: none;
+  font-size: 0.88rem;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover { color: white; background: rgba(255,255,255,0.04); }
+.nav-item.active {
+  color: white;
+  background: rgba(255,255,255,0.06);
+  border-left-color: var(--accent-bright);
+  font-weight: 500;
+}
+.nav-item .icon { width: 16px; height: 16px; opacity: 0.7; }
+.nav-item.active .icon { opacity: 1; }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.user-chip .avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  font-family: 'Fraunces', serif;
+}
+.user-chip .info { flex: 1; min-width: 0; }
+.user-chip .name { color: white; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-chip .role { color: rgba(255,255,255,0.5); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; font-family: 'JetBrains Mono', monospace; }
+
+/* ==================== MAIN ==================== */
+.main {
+  padding: 0;
+  overflow-x: hidden;
+}
+
+.page-header {
+  padding: 2rem 2.5rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+.page-header .heading {
+  flex: 1;
+  min-width: 300px;
+}
+.page-header h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 2.5rem;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.25rem;
+}
+.page-header h1 em { font-style: italic; font-weight: 400; color: var(--accent); }
+.page-header .crumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+.page-header .actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.page-body {
+  padding: 2rem 2.5rem;
+}
+
+/* ==================== DASHBOARD ==================== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 2.5rem;
+}
+.kpi {
+  background: var(--bg-elev);
+  padding: 1.5rem 1.5rem 1.25rem;
+  position: relative;
+}
+.kpi-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.5rem;
+}
+.kpi-value {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.kpi-value .currency { font-size: 0.9rem; color: var(--ink-dim); font-weight: 400; font-family: 'Instrument Sans', sans-serif; margin-right: 0.15rem; }
+.kpi-value .suffix { font-size: 0.9rem; color: var(--ink-dim); font-weight: 400; font-family: 'Instrument Sans', sans-serif; margin-left: 0.25rem; }
+.kpi-meta {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+}
+
+.funnel {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  padding: 2rem;
+  margin-bottom: 2.5rem;
+}
+.funnel h2 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
+}
+.funnel-stages {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.funnel-stage {
+  background: var(--bg-elev);
+  padding: 1rem;
+  text-align: center;
+}
+.funnel-stage .stage-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+.funnel-stage .stage-value {
+  font-family: 'Fraunces', serif;
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+.funnel-stage .stage-revenue {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+/* ==================== TABELA ==================== */
+.toolbar {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  background: var(--bg);
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+
+.filter-chip {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+.filter-chip:hover { border-color: var(--ink); }
+.filter-chip.active { background: var(--ink); color: white; border-color: var(--ink); }
+.filter-chip select { border: none; background: transparent; font-family: inherit; font-size: 0.8rem; color: inherit; }
+.filter-chip.active select { color: white; }
+
+.table-wrap {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+thead th {
+  background: var(--bg);
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  user-select: none;
+}
+thead th:hover { background: var(--line); }
+thead th.sorted { color: var(--accent); }
+tbody td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+tbody tr { cursor: pointer; transition: background 0.1s; }
+tbody tr:hover { background: var(--bg); }
+tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; }
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 2px;
+  font-weight: 600;
+}
+.farol-Q  { background: var(--danger-soft); color: var(--farol-q); }
+.farol-M  { background: var(--warn-soft); color: var(--farol-m); }
+.farol-Mo { background: var(--gold-soft); color: var(--farol-mo); }
+.farol-F  { background: var(--line); color: var(--farol-f); }
+.farol-NV { background: var(--line); color: var(--farol-nv); }
+.status-Novo { background: var(--blue-soft); color: var(--blue); }
+.status-SQL { background: var(--accent-soft); color: var(--accent); }
+.status-R1, .status-R2, .status-R3 { background: var(--gold-soft); color: var(--gold); }
+.status-Licitacao { background: var(--warn-soft); color: var(--warn); }
+.status-Ganho { background: var(--accent-soft); color: var(--accent-bright); }
+.status-Perdido { background: var(--danger-soft); color: var(--danger); }
+.status-Pausado, .status-Nao_Vale_Pena { background: var(--line); color: var(--ink-dim); }
+
+.score-bar {
+  display: inline-block;
+  width: 60px;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+.score-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--danger), var(--warn), var(--accent));
+  transform-origin: left;
+}
+
+.empty-state {
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--ink-dim);
+}
+.empty-state h3 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+}
+
+/* ==================== MODAL / DRAWER ==================== */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 26, 20, 0.4);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 720px;
+  max-width: 95vw;
+  background: var(--bg-elev);
+  z-index: 101;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -20px 0 60px -20px rgba(14, 26, 20, 0.2);
+}
+.drawer.open { transform: translateX(0); }
+
+.drawer-header {
+  padding: 1.5rem 2rem 1rem;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.drawer-header h2 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.drawer-header .crumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.25rem;
+}
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--ink-dim);
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+}
+.close-btn:hover { color: var(--ink); }
+
+.drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 2rem;
+  background: var(--bg);
+}
+.drawer-tab {
+  padding: 0.75rem 1.25rem;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.drawer-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+}
+
+.save-indicator {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--ink);
+  color: white;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.2s;
+  pointer-events: none;
+}
+.save-indicator.visible { opacity: 1; transform: translateY(0); }
+.save-indicator.saving { background: var(--warn); }
+.save-indicator.saved { background: var(--accent); }
+.save-indicator.error { background: var(--danger); }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem 1.25rem;
+}
+.form-grid .full { grid-column: 1 / -1; }
+
+.section-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 2rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.section-title:first-child { margin-top: 0; }
+
+.readonly-value {
+  padding: 0.65rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.readonly-value.empty { color: var(--ink-faint); font-style: italic; font-family: 'Instrument Sans', sans-serif; }
+
+/* ==================== KANBAN ==================== */
+.kanban {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+.kanban-col {
+  flex: 1 0 260px;
+  min-width: 260px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+}
+.kanban-col-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.kanban-col-header .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.kanban-col-header .count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  background: var(--bg-elev);
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+}
+.kanban-cards {
+  padding: 0.5rem;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.kanban-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.75rem;
+  cursor: grab;
+  transition: all 0.15s;
+}
+.kanban-card:hover { border-color: var(--ink); box-shadow: 0 2px 8px rgba(14, 26, 20, 0.06); }
+.kanban-card.dragging { opacity: 0.4; }
+.kanban-card .city {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+.kanban-card .meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+  margin-top: 0.5rem;
+}
+.kanban-card .value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+.kanban-col.drag-over .kanban-cards { background: var(--accent-soft); }
+
+/* ==================== IMPORTAR ==================== */
+.import-zone {
+  border: 2px dashed var(--line-strong);
+  border-radius: 3px;
+  padding: 3rem 2rem;
+  text-align: center;
+  background: var(--bg-elev);
+  transition: all 0.2s;
+}
+.import-zone.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.import-zone p { color: var(--ink-dim); margin-bottom: 1rem; }
+
+/* ==================== UTILS ==================== */
+.hidden { display: none !important; }
+.flex { display: flex; }
+.gap-sm { gap: 0.5rem; }
+.gap { gap: 1rem; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.mt { margin-top: 1rem; }
+.mb { margin-bottom: 1rem; }
+
+.loading {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { position: relative; height: auto; }
+  .page-header h1 { font-size: 1.75rem; }
+  .page-body { padding: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============= AUTH SCREEN ============= -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="logo-mark">Eureka</span>
+      <span class="logo-sub">Tucano Verde · CRM</span>
+    </div>
+    <h1>Prospecte<br><em>com inteligência.</em></h1>
+    <p class="sub">Priorização, pipeline e relacionamento com prefeituras brasileiras.</p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="login">Entrar</button>
+      <button class="tab" data-tab="signup">Criar conta</button>
+    </div>
+
+    <div id="authMessage"></div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <button class="btn primary wide" type="submit">Entrar</button>
+    </form>
+
+    <form id="signupForm" class="hidden">
+      <div class="field">
+        <label>Nome completo</label>
+        <input type="text" id="signupNome" required>
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="signupEmail" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Senha (mínimo 6 caracteres)</label>
+        <input type="password" id="signupPassword" required minlength="6" autocomplete="new-password">
+      </div>
+      <button class="btn primary wide" type="submit">Criar conta</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============= APP ============= -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="logo-mark">Eureka</span>
+      <span class="logo-sub">Tucano Verde</span>
+    </div>
+
+    <div class="nav-section-label">Navegação</div>
+    <button class="nav-item active" data-page="dashboard">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-item" data-page="municipios">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V10l6-4 6 4v11M10 9v.01M14 9v.01M10 13v.01M14 13v.01M10 17v.01M14 17v.01"/></svg>
+      Municípios
+    </button>
+    <button class="nav-item" data-page="pipeline">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h4v18H3zM10 3h4v12h-4zM17 3h4v8h-4z"/></svg>
+      Pipeline
+    </button>
+
+    <div class="nav-section-label">Dados</div>
+    <button class="nav-item" data-page="importar">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      Fontes de dados
+    </button>
+    <button class="nav-item" data-page="indicadores">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0 0z"/></svg>
+      Indicadores
+    </button>
+    <button class="nav-item" data-page="configuracoes">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Configurações
+    </button>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="info">
+          <div class="name" id="userName">Carregando...</div>
+          <div class="role" id="userRole">—</div>
+        </div>
+      </div>
+      <button class="btn ghost small wide" style="margin-top: 0.75rem; color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.15);" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Pages are injected here -->
+    <div id="pageContent"></div>
+  </main>
+</div>
+
+<div class="save-indicator" id="saveIndicator"></div>
+
+<!-- Drawer do município -->
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="municipioDrawer">
+  <div class="drawer-header">
+    <div>
+      <div class="crumb" id="drawerCrumb">—</div>
+      <h2 id="drawerTitle">—</h2>
+    </div>
+    <button class="close-btn" onclick="closeDrawer()">×</button>
+  </div>
+  <div class="drawer-tabs">
+    <button class="drawer-tab active" data-drawer-tab="comercial">Comercial</button>
+    <button class="drawer-tab" data-drawer-tab="publico">Dados Públicos</button>
+    <button class="drawer-tab" data-drawer-tab="atividades">Atividades</button>
+    <button class="drawer-tab" data-drawer-tab="historico">Histórico</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG SUPABASE
+// ============================================================
+const SUPABASE_URL = 'https://xwuydwdavzsazinsmibw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_54ptZzAI_pwtyBt89MFE7w_yK503nnp';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+const state = {
+  user: null,
+  perfil: null,
+  municipios: [],
+  indicadores: [],
+  configuracoes: {},
+  fontes: [],
+  fonteUpload: null,
+  currentPage: 'dashboard',
+  currentMunicipio: null,
+  filters: { search: '', uf: '', regiao: '', status: '', farol: '', multiplicador: '' },
+  sortBy: 'indicador_performance_ef',
+  sortDir: 'desc',
+};
+
+// ============================================================
+// UTILS
+// ============================================================
+function fmtMoney(v) {
+  if (v == null || v === '') return '—';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
+}
+function fmtNum(v, decimals = 0) {
+  if (v == null || v === '') return '—';
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(v);
+}
+function fmtPct(v, decimals = 1) {
+  if (v == null || v === '') return '—';
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(v) + '%';
+}
+function fmtDate(v) {
+  if (!v) return '—';
+  return new Date(v).toLocaleDateString('pt-BR');
+}
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+}
+function debounce(fn, ms = 500) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+function showSaveIndicator(state, message) {
+  const el = document.getElementById('saveIndicator');
+  el.className = 'save-indicator visible ' + state;
+  el.textContent = message;
+  if (state === 'saved' || state === 'error') {
+    setTimeout(() => el.classList.remove('visible'), 1500);
+  }
+}
+function showMessage(container, type, msg) {
+  container.innerHTML = `<div class="message ${type}">${escapeHtml(msg)}</div>`;
+  if (type === 'success') setTimeout(() => { container.innerHTML = ''; }, 3000);
+}
+function uniqueValues(arr, key) {
+  return [...new Set(arr.map(x => x[key]).filter(v => v != null && v !== ''))].sort();
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+document.querySelectorAll('.auth-screen .tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.auth-screen .tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('loginForm').classList.toggle('hidden', t.dataset.tab !== 'login');
+    document.getElementById('signupForm').classList.toggle('hidden', t.dataset.tab !== 'signup');
+    document.getElementById('authMessage').innerHTML = '';
+  });
+});
+
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgBox = document.getElementById('authMessage');
+  msgBox.innerHTML = '<div class="message">Entrando...</div>';
+  const { error } = await sb.auth.signInWithPassword({
+    email: document.getElementById('loginEmail').value,
+    password: document.getElementById('loginPassword').value,
+  });
+  if (error) return showMessage(msgBox, 'error', error.message);
+  await initApp();
+});
+
+document.getElementById('signupForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgBox = document.getElementById('authMessage');
+  msgBox.innerHTML = '<div class="message">Criando conta...</div>';
+  const { data, error } = await sb.auth.signUp({
+    email: document.getElementById('signupEmail').value,
+    password: document.getElementById('signupPassword').value,
+    options: { data: { nome: document.getElementById('signupNome').value } },
+  });
+  if (error) return showMessage(msgBox, 'error', error.message);
+  if (data.session) {
+    await initApp();
+  } else {
+    showMessage(msgBox, 'success', 'Conta criada! Verifique seu email se necessário e faça login.');
+  }
+});
+
+async function logout() {
+  await sb.auth.signOut();
+  location.reload();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function initApp() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    document.getElementById('authScreen').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    return;
+  }
+  state.user = session.user;
+
+  // Pega perfil
+  const { data: perfil } = await sb.from('perfis').select('*').eq('id', state.user.id).single();
+  state.perfil = perfil;
+
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+
+  // UI do usuário
+  const nomeCompleto = perfil?.nome || state.user.email;
+  document.getElementById('userName').textContent = nomeCompleto;
+  document.getElementById('userRole').textContent = perfil?.papel || 'sem papel';
+  document.getElementById('userAvatar').textContent = (nomeCompleto[0] || '?').toUpperCase();
+
+  // Carrega dados básicos
+  await loadCoreData();
+
+  // Nav
+  document.querySelectorAll('.nav-item').forEach(b => {
+    b.addEventListener('click', () => navigate(b.dataset.page));
+  });
+
+  navigate('dashboard');
+}
+
+async function loadCoreData() {
+  try {
+    // Municipios: carrega em páginas de 1000 para superar o limite do Supabase
+    let allMunicipios = [];
+    let page = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await sb.from('municipios').select('*')
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+      if (error) { console.error('Erro paginação:', error); break; }
+      if (!data || data.length === 0) break;
+      allMunicipios = allMunicipios.concat(data);
+      if (data.length < pageSize) break;
+      page++;
+    }
+
+    const [ind, cfg, fon] = await Promise.all([
+      sb.from('indicadores_externos').select('*').eq('ativo', true),
+      sb.from('configuracoes').select('*'),
+      sb.from('fontes_dados').select('*').order('nome'),
+    ]);
+    state.municipios = allMunicipios;
+    state.indicadores = ind.data || [];
+    state.configuracoes = {};
+    (cfg.data || []).forEach(c => { state.configuracoes[c.chave] = c.valor; });
+    state.fontes = fon.data || [];
+    console.log(`Municípios carregados: ${state.municipios.length}`);
+  } catch (e) {
+    console.error('Erro ao carregar dados:', e);
+  }
+}
+
+function navigate(page) {
+  state.currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+  const renderers = {
+    dashboard: renderDashboard,
+    municipios: renderMunicipios,
+    pipeline: renderPipeline,
+    importar: renderImportar,
+    indicadores: renderIndicadores,
+    configuracoes: renderConfiguracoes,
+  };
+  (renderers[page] || renderDashboard)();
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+  const pctRedesa = state.configuracoes.pct_redesa || 0.5;
+
+  const comReceita = state.municipios.map(m => ({
+    ...m,
+    receita_potencial: (m.ef1_alunos || 0) * repasseEF1 + (m.ef2_alunos || 0) * repasseEF2,
+  }));
+
+  const totalMunicipios = comReceita.length;
+  const receitaTotal = comReceita.reduce((s, m) => s + m.receita_potencial, 0);
+  const receitaRedesa = receitaTotal * pctRedesa;
+  const totalAlunos = comReceita.reduce((s, m) => s + ((m.ef1_alunos||0) + (m.ef2_alunos||0)), 0);
+  const ganhos = comReceita.filter(m => m.status === 'Ganho');
+  const pipeline = comReceita.filter(m => m.status && m.status !== 'Nao_Vale_Pena' && m.status !== 'Perdido');
+  const stages = ['SQL','R1','R2','R3','Licitacao','Ganho'];
+  const stageData = stages.map(s => {
+    const mun = comReceita.filter(m => m.status === s);
+    return { label: s === 'Licitacao' ? 'Licitação' : s, count: mun.length, revenue: mun.reduce((sum,m) => sum + m.receita_potencial, 0) };
+  });
+  const maxStage = Math.max(...stageData.map(s => s.count), 1);
+  const cenarios = state.configuracoes.cenarios_conversao || { agressivo: 1, realista: 0.5, conservador: 0.25 };
+
+  // Dados por UF para mapa
+  const ufData = {};
+  for (const m of comReceita) {
+    if (!m.uf) continue;
+    if (!ufData[m.uf]) ufData[m.uf] = { count: 0, receita: 0, alunos: 0, scores: [], ganhos: 0, pipeline: 0, farois: {} };
+    const d = ufData[m.uf];
+    d.count++;
+    d.receita += m.receita_potencial;
+    d.alunos += (m.ef1_alunos||0) + (m.ef2_alunos||0);
+    if (m.indicador_performance_ef != null) d.scores.push(parseFloat(m.indicador_performance_ef));
+    if (m.status === 'Ganho') d.ganhos++;
+    if (m.status && m.status !== 'Nao_Vale_Pena' && m.status !== 'Perdido') d.pipeline++;
+    if (m.farol) d.farois[m.farol] = (d.farois[m.farol] || 0) + 1;
+  }
+  Object.values(ufData).forEach(d => { d.score_medio = d.scores.length ? d.scores.reduce((a,b) => a+b, 0) / d.scores.length : 0; });
+
+  // Top indicadores
+  const indMap = {};
+  for (const m of comReceita) {
+    if (!m.indicacao) continue;
+    if (!indMap[m.indicacao]) {
+      const ind = state.indicadores.find(i => i.codigo === m.indicacao);
+      indMap[m.indicacao] = { nome: ind?.nome || m.indicacao, pct: ind?.percentual_comissao || 0, receita: 0, count: 0 };
+    }
+    indMap[m.indicacao].receita += m.receita_potencial;
+    indMap[m.indicacao].count++;
+  }
+  const topIndicadores = Object.entries(indMap).sort((a,b) => b[1].receita - a[1].receita).slice(0, 5);
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Visão geral · Educação</div>
+        <h1>Bom dia, <em>${escapeHtml((state.perfil?.nome || '').split(' ')[0] || 'vendedor')}</em>.</h1>
+      </div>
+      <div class="actions">
+        <select id="dashPeriodo" style="font:inherit; font-size:.85rem; background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:6px 12px; color:var(--ink)">
+          <option value="all">Toda a base</option>
+          <option value="pipeline">Só pipeline ativo</option>
+          <option value="ganho">Só ganhos</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="page-body" style="gap: 1.5rem;">
+
+      <!-- KPIs topo -->
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi-label">Municípios na base</div>
+          <div class="kpi-value">${fmtNum(totalMunicipios)}</div>
+          <div class="kpi-meta">${pipeline.length} no pipeline ativo</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Receita potencial total</div>
+          <div class="kpi-value"><span class="currency">R$</span>${receitaTotal >= 1e9 ? fmtNum(receitaTotal/1e9,1)+'<span class="suffix">bi</span>' : fmtNum(receitaTotal/1e6,0)+'<span class="suffix">M</span>'}</div>
+          <div class="kpi-meta">${fmtMoney(receitaRedesa)} líquido Redesa</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Alunos EF (potencial)</div>
+          <div class="kpi-value">${fmtNum(totalAlunos)}</div>
+          <div class="kpi-meta">EF1 + EF2 todas as redes</div>
+        </div>
+        <div class="kpi" style="border-color: var(--accent); background: var(--accent-soft);">
+          <div class="kpi-label">Ganhos fechados</div>
+          <div class="kpi-value" style="color:var(--accent)">${fmtNum(ganhos.length)}</div>
+          <div class="kpi-meta">${fmtMoney(ganhos.reduce((s,m) => s+m.receita_potencial,0))}</div>
+        </div>
+      </div>
+
+      <!-- Linha 2: Mapa + Funil -->
+      <div style="display:grid; grid-template-columns: 1fr 380px; gap: 1.5rem; align-items: start;">
+
+        <!-- MAPA -->
+        <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;">
+            <h2 style="font-size:1rem; font-weight:600;">Mapa do Brasil</h2>
+            <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+              <select id="mapaDimensao" style="font:inherit; font-size:.8rem; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:4px 10px; color:var(--ink)">
+                <option value="receita">Receita potencial</option>
+                <option value="alunos">Alunos EF</option>
+                <option value="score">Score médio</option>
+                <option value="pipeline">Municípios no pipeline</option>
+                <option value="ganhos">Ganhos</option>
+                <option value="farol_q">Farol Quente</option>
+              </select>
+              <select id="mapaUF" style="font:inherit; font-size:.8rem; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:4px 10px; color:var(--ink)">
+                <option value="">Todos os estados</option>
+                ${Object.keys(ufData).sort().map(uf => `<option value="${uf}">${uf}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div id="mapaContainer" style="width:100%; min-height:400px; position:relative;"></div>
+          <div id="mapaTooltip" style="position:fixed; background:var(--ink); color:#fff; padding:8px 12px; border-radius:4px; font-size:.8rem; pointer-events:none; display:none; z-index:9999; max-width:200px; line-height:1.5;"></div>
+          <div id="mapaLegenda" style="margin-top:.75rem; display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:var(--ink-dim);"></div>
+        </div>
+
+        <!-- FUNIL + CENÁRIOS -->
+        <div style="display:flex; flex-direction:column; gap:1rem;">
+          <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+            <h2 style="font-size:1rem; font-weight:600; margin-bottom:1rem;">Funil de vendas</h2>
+            ${stageData.map(s => `
+              <div style="margin-bottom:.6rem;">
+                <div style="display:flex; justify-content:space-between; font-size:.8rem; margin-bottom:.2rem;">
+                  <span style="font-weight:600;">${s.label}</span>
+                  <span style="color:var(--ink-dim)">${s.count} · ${fmtMoney(s.revenue)}</span>
+                </div>
+                <div style="height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                  <div style="height:100%; width:${s.count ? Math.max(4, s.count/maxStage*100) : 0}%; background:var(--accent); border-radius:3px; transition:width .3s;"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Cenários -->
+          <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+            <h2 style="font-size:1rem; font-weight:600; margin-bottom:1rem;">Cenários Redesa</h2>
+            <div style="display:flex; flex-direction:column; gap:.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:.75rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.05em;">Agressivo 100%</div>
+                  <div style="font-size:1.1rem; font-weight:700; color:var(--accent);">${fmtMoney(receitaRedesa * cenarios.agressivo)}</div>
+                </div>
+                <div style="width:40px; height:40px; border-radius:50%; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:1.2rem;">🚀</div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:.75rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.05em;">Realista 50%</div>
+                  <div style="font-size:1.1rem; font-weight:700; color:var(--gold);">${fmtMoney(receitaRedesa * cenarios.realista)}</div>
+                </div>
+                <div style="width:40px; height:40px; border-radius:50%; background:var(--gold-soft); display:flex; align-items:center; justify-content:center; font-size:1.2rem;">🎯</div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:.75rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.05em;">Conservador 25%</div>
+                  <div style="font-size:1.1rem; font-weight:700; color:var(--ink-dim);">${fmtMoney(receitaRedesa * cenarios.conservador)}</div>
+                </div>
+                <div style="width:40px; height:40px; border-radius:50%; background:var(--line); display:flex; align-items:center; justify-content:center; font-size:1.2rem;">🛡️</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Indicadores -->
+          ${topIndicadores.length > 0 ? `
+          <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+            <h2 style="font-size:1rem; font-weight:600; margin-bottom:1rem;">Top Responsáveis</h2>
+            ${topIndicadores.map(([cod, d]) => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:.4rem 0; border-bottom:1px solid var(--line); font-size:.82rem;">
+                <div>
+                  <div style="font-weight:600;">${escapeHtml(d.nome)}</div>
+                  <div style="color:var(--ink-dim); font-size:.75rem;">${d.count} municípios · ${d.pct ? (d.pct*100).toFixed(0)+'%' : '—'} comissão</div>
+                </div>
+                <div style="font-weight:700; color:var(--accent); font-size:.85rem;">${fmtMoney(d.receita * d.pct)}</div>
+              </div>
+            `).join('')}
+          </div>` : ''}
+        </div>
+      </div>
+
+      <!-- Linha 3: Top municípios por receita e por score -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem;">
+        <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+          <h2 style="font-size:1rem; font-weight:600; margin-bottom:1rem;">Top 10 · Maior receita potencial</h2>
+          ${comReceita.sort((a,b) => b.receita_potencial - a.receita_potencial).slice(0,10).map((m,i) => `
+            <div style="display:flex; align-items:center; gap:.75rem; padding:.35rem 0; border-bottom:1px solid var(--line); cursor:pointer;" onclick="openMunicipio('${m.id}')">
+              <span style="font-size:.75rem; color:var(--ink-faint); width:18px; text-align:right;">${i+1}</span>
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:600; font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.municipio)}</div>
+                <div style="font-size:.72rem; color:var(--ink-dim)">${m.uf || ''}</div>
+              </div>
+              <div style="font-size:.82rem; font-weight:600; color:var(--accent); white-space:nowrap;">${fmtMoney(m.receita_potencial)}</div>
+              ${m.farol ? `<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
+          <h2 style="font-size:1rem; font-weight:600; margin-bottom:1rem;">Top 10 · Melhor Score</h2>
+          ${comReceita.filter(m => m.indicador_performance_ef != null).sort((a,b) => b.indicador_performance_ef - a.indicador_performance_ef).slice(0,10).map((m,i) => `
+            <div style="display:flex; align-items:center; gap:.75rem; padding:.35rem 0; border-bottom:1px solid var(--line); cursor:pointer;" onclick="openMunicipio('${m.id}')">
+              <span style="font-size:.75rem; color:var(--ink-faint); width:18px; text-align:right;">${i+1}</span>
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:600; font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.municipio)}</div>
+                <div style="font-size:.72rem; color:var(--ink-dim)">${m.uf || ''}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:.4rem;">
+                <span class="score-bar" style="width:50px;"><span class="score-bar-fill" style="transform:scaleX(${Math.min(parseFloat(m.indicador_performance_ef)||0,10)/10})"></span></span>
+                <span style="font-size:.82rem; font-weight:600;">${fmtNum(m.indicador_performance_ef,1)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // Renderiza mapa
+  renderMapaBrasil(ufData);
+
+  // Listener do seletor de dimensão
+  document.getElementById('mapaDimensao').addEventListener('change', () => renderMapaBrasil(ufData));
+  document.getElementById('mapaUF').addEventListener('change', (e) => {
+    const uf = e.target.value;
+    if (uf) {
+      // Filtra municípios daquela UF e abre lista filtrada
+      state.filters.uf = uf;
+      navigate('municipios');
+    } else {
+      renderMapaBrasil(ufData);
+    }
+  });
+}
+
+// ============================================================
+// MAPA DO BRASIL
+// ============================================================
+async function renderMapaBrasil(ufData) {
+  const container = document.getElementById('mapaContainer');
+  const tooltip = document.getElementById('mapaTooltip');
+  const legenda = document.getElementById('mapaLegenda');
+  if (!container) return;
+
+  const dimensao = document.getElementById('mapaDimensao')?.value || 'receita';
+
+  const getVal = (uf) => {
+    const d = ufData[uf];
+    if (!d) return 0;
+    switch (dimensao) {
+      case 'receita':  return d.receita;
+      case 'alunos':   return d.alunos;
+      case 'score':    return d.score_medio;
+      case 'pipeline': return d.pipeline;
+      case 'ganhos':   return d.ganhos;
+      case 'farol_q':  return d.farois?.Q || 0;
+      default:         return d.receita;
+    }
+  };
+
+  const getLabel = (uf) => {
+    const d = ufData[uf];
+    if (!d) return `${uf}: sem dados`;
+    const val = getVal(uf);
+    const fmt = { receita: fmtMoney(val), alunos: fmtNum(val)+' alunos',
+      score: fmtNum(val,1)+' score', pipeline: val+' municípios',
+      ganhos: val+' ganhos', farol_q: val+' Quentes' };
+    return `${uf} · ${d.count} municípios
+${fmt[dimensao]||fmtMoney(val)}`;
+  };
+
+  const vals = Object.keys(ufData).map(uf => getVal(uf));
+  const maxVal = Math.max(...vals, 1);
+  const getColor = (uf) => {
+    const d = ufData[uf];
+    if (!d) return '#ddd8cc';
+    const t = Math.pow(getVal(uf) / maxVal, 0.5);
+    return `rgb(${Math.round(232-t*222)},${Math.round(240-t*160)},${Math.round(234-t*194)})`;
+  };
+
+  // Tenta carregar D3 para mapa de polígonos reais
+  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:var(--ink-dim);font-size:.85rem;">Carregando mapa...</div>';
+
+  try {
+    if (!window.d3) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal);
+  } catch(e) {
+    // D3 não carregou (offline) — usa mapa esquemático
+    renderMapaEsquematico(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal);
+  }
+}
+
+function renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal) {
+  // GeoJSON embutido dos 27 estados brasileiros
+  const GEO = {"type":"FeatureCollection","features":[
+    {"type":"Feature","properties":{"uf":"AC"},"geometry":{"type":"Polygon","coordinates":[[[-73.99,-7.33],[-73.21,-9.52],[-70.52,-11.06],[-67.81,-11.03],[-67.17,-10.29],[-68.65,-9.21],[-70.19,-9.76],[-73.99,-7.33]]]}},
+    {"type":"Feature","properties":{"uf":"AL"},"geometry":{"type":"Polygon","coordinates":[[[-36.34,-8.81],[-37.25,-9.35],[-37.38,-10.35],[-36.49,-10.49],[-35.64,-9.47],[-35.15,-8.81],[-36.34,-8.81]]]}},
+    {"type":"Feature","properties":{"uf":"AM"},"geometry":{"type":"Polygon","coordinates":[[[-73.78,-7.33],[-70.19,-9.76],[-68.65,-9.21],[-67.17,-10.29],[-65.31,-10.0],[-60.0,-9.8],[-59.84,-4.22],[-63.38,-1.97],[-63.38,1.12],[-69.42,1.07],[-70.19,-0.16],[-73.21,-1.8],[-73.78,-7.33]]]}},
+    {"type":"Feature","properties":{"uf":"AP"},"geometry":{"type":"Polygon","coordinates":[[[-51.64,4.22],[-50.36,4.09],[-49.98,1.41],[-50.98,0.3],[-52.71,-0.16],[-52.46,1.38],[-51.64,4.22]]]}},
+    {"type":"Feature","properties":{"uf":"BA"},"geometry":{"type":"Polygon","coordinates":[[[-37.25,-9.35],[-38.0,-8.81],[-39.99,-8.81],[-41.0,-10.1],[-42.5,-12.5],[-43.7,-15.0],[-44.0,-17.5],[-39.8,-18.1],[-38.0,-13.38],[-37.25,-9.35]]]}},
+    {"type":"Feature","properties":{"uf":"CE"},"geometry":{"type":"Polygon","coordinates":[[[-38.5,-2.77],[-40.5,-2.77],[-41.37,-3.75],[-40.5,-7.34],[-38.5,-7.34],[-37.25,-5.65],[-38.5,-2.77]]]}},
+    {"type":"Feature","properties":{"uf":"DF"},"geometry":{"type":"Polygon","coordinates":[[[-48.3,-15.5],[-47.3,-15.5],[-47.3,-16.1],[-48.3,-16.1],[-48.3,-15.5]]]}},
+    {"type":"Feature","properties":{"uf":"ES"},"geometry":{"type":"Polygon","coordinates":[[[-39.68,-17.88],[-41.88,-18.07],[-41.88,-20.91],[-39.68,-21.08],[-39.68,-17.88]]]}},
+    {"type":"Feature","properties":{"uf":"GO"},"geometry":{"type":"Polygon","coordinates":[[[-46.0,-12.6],[-47.3,-16.1],[-48.3,-16.1],[-50.6,-19.2],[-52.5,-18.0],[-52.22,-15.26],[-46.0,-12.6]]]}},
+    {"type":"Feature","properties":{"uf":"MA"},"geometry":{"type":"Polygon","coordinates":[[[-41.37,-2.77],[-44.5,-2.5],[-45.5,-1.0],[-48.0,-1.6],[-47.8,-3.4],[-45.5,-5.5],[-44.5,-7.0],[-42.5,-7.0],[-41.37,-3.75],[-41.37,-2.77]]]}},
+    {"type":"Feature","properties":{"uf":"MG"},"geometry":{"type":"Polygon","coordinates":[[[-39.8,-14.0],[-39.68,-17.88],[-41.88,-20.91],[-45.0,-23.0],[-47.3,-23.0],[-50.6,-19.2],[-48.3,-16.1],[-47.3,-16.1],[-46.0,-12.6],[-44.0,-10.0],[-39.8,-14.0]]]}},
+    {"type":"Feature","properties":{"uf":"MS"},"geometry":{"type":"Polygon","coordinates":[[[-51.0,-17.0],[-52.5,-18.0],[-53.8,-20.0],[-54.0,-23.4],[-57.5,-24.0],[-58.0,-20.0],[-57.7,-17.5],[-54.0,-15.5],[-51.0,-17.0]]]}},
+    {"type":"Feature","properties":{"uf":"MT"},"geometry":{"type":"Polygon","coordinates":[[[-51.0,-9.8],[-54.0,-8.5],[-60.0,-9.0],[-60.0,-15.0],[-54.0,-15.5],[-57.7,-17.5],[-58.0,-16.0],[-54.0,-12.0],[-51.0,-9.8]]]}},
+    {"type":"Feature","properties":{"uf":"PA"},"geometry":{"type":"Polygon","coordinates":[[[-49.5,-1.7],[-48.0,-1.6],[-45.5,-1.0],[-44.5,-2.5],[-46.5,-7.5],[-47.8,-9.5],[-48.0,-10.0],[-50.5,-9.5],[-54.0,-8.5],[-54.0,-3.5],[-51.9,-1.5],[-49.5,-1.7]]]}},
+    {"type":"Feature","properties":{"uf":"PB"},"geometry":{"type":"Polygon","coordinates":[[[-34.79,-6.0],[-35.7,-6.0],[-38.5,-6.5],[-38.5,-8.0],[-36.5,-8.0],[-34.79,-7.0],[-34.79,-6.0]]]}},
+    {"type":"Feature","properties":{"uf":"PE"},"geometry":{"type":"Polygon","coordinates":[[[-34.97,-7.97],[-38.5,-8.0],[-38.5,-6.5],[-35.7,-6.0],[-34.79,-6.0],[-34.79,-7.0],[-34.97,-7.97]]]}},
+    {"type":"Feature","properties":{"uf":"PI"},"geometry":{"type":"Polygon","coordinates":[[[-40.5,-2.77],[-41.37,-2.77],[-41.37,-3.75],[-42.5,-7.0],[-44.5,-7.0],[-44.5,-9.5],[-43.0,-9.5],[-41.0,-10.1],[-40.5,-7.34],[-40.5,-2.77]]]}},
+    {"type":"Feature","properties":{"uf":"PR"},"geometry":{"type":"Polygon","coordinates":[[[-48.0,-22.5],[-53.0,-24.0],[-54.0,-26.5],[-53.7,-26.2],[-49.0,-25.0],[-48.0,-22.5]]]}},
+    {"type":"Feature","properties":{"uf":"RJ"},"geometry":{"type":"Polygon","coordinates":[[[-41.0,-20.7],[-41.88,-20.91],[-44.5,-23.0],[-44.0,-23.5],[-41.0,-23.0],[-41.0,-20.7]]]}},
+    {"type":"Feature","properties":{"uf":"RN"},"geometry":{"type":"Polygon","coordinates":[[[-34.97,-4.97],[-35.7,-6.0],[-38.5,-6.5],[-38.5,-5.5],[-35.7,-4.5],[-34.97,-4.97]]]}},
+    {"type":"Feature","properties":{"uf":"RO"},"geometry":{"type":"Polygon","coordinates":[[[-67.81,-11.03],[-60.0,-9.8],[-60.0,-15.0],[-65.31,-10.0],[-67.17,-10.29],[-67.81,-11.03]]]}},
+    {"type":"Feature","properties":{"uf":"RR"},"geometry":{"type":"Polygon","coordinates":[[[-60.0,-2.5],[-59.84,-4.22],[-63.38,-1.97],[-63.38,1.12],[-59.84,2.5],[-60.0,5.2],[-61.0,2.0],[-60.0,-2.5]]]}},
+    {"type":"Feature","properties":{"uf":"RS"},"geometry":{"type":"Polygon","coordinates":[[[-49.7,-27.2],[-53.7,-32.58],[-53.4,-33.8],[-50.0,-33.8],[-49.7,-27.2]]]}},
+    {"type":"Feature","properties":{"uf":"SC"},"geometry":{"type":"Polygon","coordinates":[[[-48.55,-25.95],[-53.7,-26.2],[-54.0,-26.5],[-53.7,-32.58],[-49.7,-27.2],[-48.55,-25.95]]]}},
+    {"type":"Feature","properties":{"uf":"SE"},"geometry":{"type":"Polygon","coordinates":[[[-36.49,-10.49],[-37.38,-10.35],[-38.0,-10.5],[-38.0,-11.5],[-36.49,-11.0],[-36.49,-10.49]]]}},
+    {"type":"Feature","properties":{"uf":"SP"},"geometry":{"type":"Polygon","coordinates":[[[-44.5,-23.0],[-47.3,-23.0],[-50.6,-19.2],[-52.5,-18.0],[-53.8,-20.0],[-53.0,-24.0],[-48.0,-22.5],[-44.5,-23.0]]]}},
+    {"type":"Feature","properties":{"uf":"TO"},"geometry":{"type":"Polygon","coordinates":[[[-46.0,-12.6],[-47.8,-9.5],[-46.5,-7.5],[-44.5,-9.5],[-46.0,-12.6]]]}}
+  ]};
+
+  const W = 760, H = 860;
+  // Projeção manual calibrada para o Brasil
+  const projection = d3.geoMercator()
+    .center([-53, -15])
+    .scale(830)
+    .translate([W/2, H/2]);
+  const path = d3.geoPath().projection(projection);
+  
+  // Verifica se os polígonos estão sendo projetados corretamente
+  const testPt = projection([-47.9, -15.8]); // DF
+  console.log('DF projetado para:', testPt, '(esperado: próximo de 380, 430)');
+
+  container.innerHTML = '';
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('width','100%')
+    .style('display','block')
+    .style('max-height','500px');
+
+  svg.selectAll('path')
+    .data(GEO.features)
+    .enter().append('path')
+    .attr('d', path)
+    .attr('fill', d => getColor(d.properties.uf))
+    .attr('stroke','#fff')
+    .attr('stroke-width', 1)
+    .attr('cursor','pointer')
+    .on('mouseenter', function(event, d) {
+      const uf = d.properties.uf;
+      tooltip.style.display = 'block';
+      tooltip.innerText = getLabel(uf);
+      d3.select(this).attr('stroke','#1e5f3c').attr('stroke-width',2.5);
+    })
+    .on('mousemove', function(event) {
+      tooltip.style.left = (event.clientX+16)+'px';
+      tooltip.style.top  = (event.clientY-8)+'px';
+    })
+    .on('mouseleave', function() {
+      tooltip.style.display = 'none';
+      d3.select(this).attr('stroke','#fff').attr('stroke-width',1);
+    })
+    .on('click', function(event, d) {
+      state.filters.uf = d.properties.uf;
+      navigate('municipios');
+    });
+
+  // Labels
+  svg.selectAll('text')
+    .data(GEO.features)
+    .enter().append('text')
+    .attr('x', d => path.centroid(d)[0])
+    .attr('y', d => path.centroid(d)[1]+4)
+    .attr('text-anchor','middle')
+    .attr('font-size', d => {
+      const uf = d.properties.uf;
+      const pos = path.bounds(d);
+      const w = pos[1][0]-pos[0][0];
+      return w < 20 ? 6 : w < 35 ? 8 : 10;
+    })
+    .attr('font-weight','700')
+    .attr('font-family','Instrument Sans,sans-serif')
+    .attr('fill', d => {
+      const t = Math.pow(getVal(d.properties.uf)/maxVal, 0.5);
+      return t > 0.45 ? '#fff' : '#0e1a14';
+    })
+    .attr('pointer-events','none')
+    .text(d => d.properties.uf);
+
+  legenda.innerHTML = `
+    <span>Menor</span>
+    <div style="width:120px;height:10px;border-radius:5px;background:linear-gradient(to right,rgb(232,240,234),rgb(10,80,40));"></div>
+    <span>Maior</span>
+    <span style="margin-left:1rem;color:var(--ink-faint)">Clique no estado para filtrar municípios</span>`;
+}
+
+function renderMapaEsquematico(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal) {
+  const estadoPos = {
+    AC:{x:18,y:300,w:74,h:54}, AL:{x:648,y:272,w:40,h:38}, AM:{x:70,y:148,w:165,h:135},
+    AP:{x:360,y:55,w:68,h:58}, BA:{x:512,y:355,w:126,h:115}, CE:{x:558,y:192,w:64,h:63},
+    DF:{x:444,y:444,w:28,h:24}, ES:{x:554,y:500,w:44,h:56}, GO:{x:338,y:398,w:100,h:92},
+    MA:{x:462,y:192,w:82,h:78}, MG:{x:402,y:500,w:148,h:115}, MS:{x:232,y:492,w:104,h:88},
+    MT:{x:186,y:300,w:136,h:122}, PA:{x:290,y:148,w:160,h:130}, PB:{x:622,y:236,w:52,h:35},
+    PE:{x:562,y:272,w:82,h:40}, PI:{x:462,y:272,w:68,h:82}, PR:{x:306,y:712,w:116,h:70},
+    RJ:{x:468,y:618,w:80,h:54}, RN:{x:626,y:192,w:54,h:40}, RO:{x:96,y:300,w:86,h:60},
+    RR:{x:196,y:35,w:85,h:62}, RS:{x:284,y:836,w:128,h:90}, SC:{x:328,y:782,w:100,h:54},
+    SE:{x:648,y:314,w:40,h:36}, SP:{x:330,y:618,w:134,h:90}, TO:{x:328,y:280,w:82,h:108},
+  };
+  let svg = '';
+  for (const [uf, p] of Object.entries(estadoPos)) {
+    const cor = getColor(uf);
+    const d = ufData[uf];
+    const t = d ? Math.pow(getVal(uf)/maxVal,0.5) : 0;
+    const tc = t>0.4?'#fff':'#0e1a14';
+    const fs = p.w<50?8:p.w<70?9:10;
+    svg += `<g class="uf-grupo" data-uf="${uf}" style="cursor:pointer">
+      <rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${cor}" stroke="#fff" stroke-width="1.5" rx="3"/>
+      <text x="${p.x+p.w/2}" y="${p.y+p.h/2-4}" text-anchor="middle" fill="${tc}"
+        font-size="${fs}" font-weight="700" font-family="Instrument Sans,sans-serif" pointer-events="none">${uf}</text>
+      ${d&&p.h>=45?`<text x="${p.x+p.w/2}" y="${p.y+p.h/2+8}" text-anchor="middle" fill="${tc}" opacity=".8"
+        font-size="7.5" font-family="Instrument Sans,sans-serif" pointer-events="none">${d.count}</text>`:''}
+    </g>`;
+  }
+  container.innerHTML = `<svg viewBox="10 27 686 907" width="100%" style="display:block;max-height:500px;">${svg}</svg>`;
+  container.querySelectorAll('.uf-grupo').forEach(g => {
+    const uf = g.dataset.uf;
+    g.addEventListener('mouseenter', () => {
+      tooltip.style.display='block'; tooltip.innerText=getLabel(uf);
+      g.querySelector('rect').setAttribute('stroke','#1e5f3c');
+      g.querySelector('rect').setAttribute('stroke-width','2.5');
+    });
+    g.addEventListener('mousemove', e => {
+      tooltip.style.left=(e.clientX+16)+'px'; tooltip.style.top=(e.clientY-8)+'px';
+    });
+    g.addEventListener('mouseleave', () => {
+      tooltip.style.display='none';
+      g.querySelector('rect').setAttribute('stroke','#fff');
+      g.querySelector('rect').setAttribute('stroke-width','1.5');
+    });
+    g.addEventListener('click', () => { state.filters.uf=uf; navigate('municipios'); });
+  });
+  legenda.innerHTML = `<span>Menor</span>
+    <div style="width:120px;height:10px;border-radius:5px;background:linear-gradient(to right,rgb(232,240,234),rgb(10,80,40));"></div>
+    <span>Maior</span><span style="margin-left:1rem;color:var(--ink-faint)">Clique no estado para filtrar municípios</span>`;
+}
+// ============================================================
+// MUNICÍPIOS — LISTA
+// ============================================================
+function renderMunicipios() {
+  const ufs = uniqueValues(state.municipios, 'uf');
+  const regioes = uniqueValues(state.municipios, 'regiao_administrativa');
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Base · Todos os municípios</div>
+        <h1><em>Municípios</em></h1>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" onclick="exportarCSV()">Exportar CSV</button>
+        <button class="btn primary" onclick="novoMunicipio()">+ Novo município</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="toolbar">
+        <input class="search-input" id="searchInput" placeholder="Buscar por município, prefeito, secretário..." value="${escapeHtml(state.filters.search)}">
+        <div class="filter-chip">
+          <select id="filterUF">
+            <option value="">Todas UF</option>
+            ${ufs.map(u => `<option value="${escapeHtml(u)}" ${state.filters.uf===u?'selected':''}>${escapeHtml(u)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="filter-chip">
+          <select id="filterRegiao">
+            <option value="">Todas regiões</option>
+            ${regioes.map(r => `<option value="${escapeHtml(r)}" ${state.filters.regiao===r?'selected':''}>${escapeHtml(r)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="filter-chip">
+          <select id="filterStatus">
+            <option value="">Todos status</option>
+            <option value="Novo">Novo</option>
+            <option value="SQL">SQL</option>
+            <option value="R1">R1</option>
+            <option value="R2">R2</option>
+            <option value="R3">R3</option>
+            <option value="Licitacao">Licitação</option>
+            <option value="Ganho">Ganho</option>
+            <option value="Perdido">Perdido</option>
+            <option value="Pausado">Pausado</option>
+            <option value="Nao_Vale_Pena">Não vale a pena</option>
+          </select>
+        </div>
+        <div class="filter-chip">
+          <select id="filterFarol">
+            <option value="">Todos faróis</option>
+            <option value="Q">Quente</option>
+            <option value="M">Médio</option>
+            <option value="Mo">Morno</option>
+            <option value="F">Frio</option>
+            <option value="NV">Não vale</option>
+          </select>
+        </div>
+        <div class="filter-chip" title="Multiplica a Receita potencial na tabela. Deixe vazio para ver o valor bruto." style="background: #f0ede3; border: 1px solid #2d4a2b; padding: 6px 12px; display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 12px; color: #2d4a2b; font-weight: 600; letter-spacing: 0.5px;">× MULTIPLICADOR:</span>
+          <input type="number" id="filterMultiplicador" step="0.01" min="0" placeholder="—" value="${state.filters.multiplicador}" style="background: transparent; border: none; color: #2d4a2b; width: 70px; font: inherit; font-weight: 600; outline: none; text-align: center;">
+        </div>
+      </div>
+      <div class="table-wrap" id="tableWrap"></div>
+    </div>
+  `;
+
+  ['searchInput','filterUF','filterRegiao','filterStatus','filterFarol','filterMultiplicador'].forEach(id => {
+    const el = document.getElementById(id);
+    const ev = (id === 'searchInput' || id === 'filterMultiplicador') ? 'input' : 'change';
+    el.addEventListener(ev, () => {
+      state.filters.search = document.getElementById('searchInput').value;
+      state.filters.uf = document.getElementById('filterUF').value;
+      state.filters.regiao = document.getElementById('filterRegiao').value;
+      state.filters.status = document.getElementById('filterStatus').value;
+      state.filters.farol = document.getElementById('filterFarol').value;
+      state.filters.multiplicador = document.getElementById('filterMultiplicador').value;
+      renderTable();
+    });
+  });
+
+  // Aplica filtros iniciais
+  document.getElementById('filterStatus').value = state.filters.status;
+  document.getElementById('filterFarol').value = state.filters.farol;
+
+  renderTable();
+}
+
+function getFilteredMunicipios() {
+  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+  const mult = parseFloat(state.filters.multiplicador);
+  const multValido = !isNaN(mult) && mult > 0;
+
+  let items = state.municipios.map(m => {
+    const receitaBase = (m.ef1_alunos || 0) * repasseEF1 + (m.ef2_alunos || 0) * repasseEF2;
+    return {
+      ...m,
+      receita_potencial: multValido ? receitaBase * mult : receitaBase,
+    };
+  });
+
+  const f = state.filters;
+  if (f.search) {
+    const s = f.search.toLowerCase();
+    items = items.filter(m =>
+      (m.municipio || '').toLowerCase().includes(s) ||
+      (m.prefeito || '').toLowerCase().includes(s) ||
+      (m.secretario_educacao || '').toLowerCase().includes(s) ||
+      (m.indicacao || '').toLowerCase().includes(s)
+    );
+  }
+  if (f.uf) items = items.filter(m => m.uf === f.uf);
+  if (f.regiao) items = items.filter(m => m.regiao_administrativa === f.regiao);
+  if (f.status) items = items.filter(m => m.status === f.status);
+  if (f.farol) items = items.filter(m => m.farol === f.farol);
+
+  // Sort
+  items.sort((a, b) => {
+    const av = a[state.sortBy];
+    const bv = b[state.sortBy];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'number') return state.sortDir === 'asc' ? av - bv : bv - av;
+    return state.sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+
+  return items;
+}
+
+function renderTable() {
+  const items = getFilteredMunicipios();
+  const wrap = document.getElementById('tableWrap');
+  if (!wrap) return;
+
+  if (items.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">
+      <h3>Nenhum município encontrado</h3>
+      <p>Ajuste os filtros ou importe um CSV para começar.</p>
+    </div>`;
+    return;
+  }
+
+  // Mapa coluna -> código da fonte (pra montar tooltip com origem e data)
+  const colunaFonte = {
+    total_ef: 'inep_matriculas',
+    ef1_alunos: 'inep_matriculas',
+    ef2_alunos: 'inep_matriculas',
+    idhm: 'pnud_idhm',
+    aprovacao_ef: 'inep_rendimento',
+    abandono_ef: 'inep_rendimento',
+    ideb_ef1: 'inep_ideb',
+    ideb_ef2: 'inep_ideb',
+    saeb_ef1: 'inep_saeb',
+    saeb_ef2: 'inep_saeb',
+    fundeb_distribuido: 'fnde_fundeb',
+    educacao_total_liquidado: 'siconfi_educacao',
+    populacao_2022: 'ibge_populacao_2022',
+  };
+
+  const tooltipFonte = (key) => {
+    const codigo = colunaFonte[key];
+    if (!codigo) return '';
+    const f = (state.fontes || []).find(x => x.codigo === codigo);
+    if (!f) return '';
+    const dt = f.ultima_atualizacao ? new Date(f.ultima_atualizacao).toLocaleDateString('pt-BR') : '—';
+    return `${f.nome} • ${f.orgao || ''} ${f.ano || ''} • última atualização: ${dt}`;
+  };
+
+  const cols = [
+    { key: 'municipio', label: 'Município', sortable: true },
+    { key: 'uf', label: 'UF', sortable: true },
+    { key: 'regiao_administrativa', label: 'Região', sortable: true },
+    { key: 'total_ef', label: 'Alunos EF', sortable: true, num: true },
+    { key: 'receita_potencial', label: 'Receita pot.', sortable: true, num: true, fmt: fmtMoney },
+    { key: 'indicador_performance_ef', label: 'Score', sortable: true, num: true },
+    { key: 'idhm', label: 'IDHM', sortable: true, num: true, fmt: v => fmtNum(v, 3) },
+    { key: 'farol', label: 'Farol', sortable: true },
+    { key: 'status', label: 'Status', sortable: true },
+    { key: 'indicacao', label: 'Indic.', sortable: true },
+    { key: 'prefeito', label: 'Prefeito(a)', sortable: true },
+  ];
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        ${cols.map(c => {
+          const tip = tooltipFonte(c.key);
+          return `
+          <th data-col="${c.key}" class="${state.sortBy === c.key ? 'sorted' : ''} ${c.num ? 'num' : ''}" ${tip ? `title="${escapeHtml(tip)}"` : ''}>
+            ${c.label}${tip ? ' <span style="opacity:.5; font-size:.7em; font-weight:normal">ⓘ</span>' : ''} ${state.sortBy === c.key ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}
+          </th>
+          `;
+        }).join('')}
+      </tr></thead>
+      <tbody>
+        ${items.map(m => `
+          <tr data-id="${m.id}">
+            <td><strong>${escapeHtml(m.municipio)}</strong></td>
+            <td>${escapeHtml(m.uf || '—')}</td>
+            <td>${escapeHtml(m.regiao_administrativa || '—')}</td>
+            <td class="num">${fmtNum(m.total_ef)}</td>
+            <td class="num">${fmtMoney(m.receita_potencial)}</td>
+            <td class="num">
+              ${m.indicador_performance_ef != null ? `
+                <span class="score-bar"><span class="score-bar-fill" style="transform: scaleX(${Math.min(m.indicador_performance_ef, 10) / 10})"></span></span>
+                ${fmtNum(m.indicador_performance_ef, 2)}
+              ` : '—'}
+            </td>
+            <td class="num">${m.idhm != null ? fmtNum(m.idhm, 3) : '—'}</td>
+            <td>${m.farol ? `<span class="pill farol-${m.farol}">${escapeHtml(m.farol)}</span>` : '—'}</td>
+            <td>${m.status ? `<span class="pill status-${m.status}">${escapeHtml(m.status)}</span>` : '—'}</td>
+            <td>${escapeHtml(m.indicacao || '—')}</td>
+            <td>${escapeHtml(m.prefeito || '—')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  // Sort handlers
+  wrap.querySelectorAll('th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (state.sortBy === col) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortBy = col;
+        state.sortDir = 'desc';
+      }
+      renderTable();
+    });
+  });
+
+  // Row click
+  wrap.querySelectorAll('tr[data-id]').forEach(tr => {
+    tr.addEventListener('click', () => openMunicipio(tr.dataset.id));
+  });
+}
+
+// ============================================================
+// DRAWER DO MUNICÍPIO
+// ============================================================
+async function openMunicipio(id) {
+  const mun = state.municipios.find(m => m.id === id);
+  if (!mun) return;
+  state.currentMunicipio = mun;
+
+  document.getElementById('drawerCrumb').textContent =
+    `${mun.uf || '—'} · ${mun.regiao_administrativa || 'Sem região'}`;
+  document.getElementById('drawerTitle').textContent = mun.municipio;
+
+  openDrawerTab('comercial');
+
+  document.getElementById('drawerBackdrop').classList.add('open');
+  document.getElementById('municipioDrawer').classList.add('open');
+
+  // Tab handlers
+  document.querySelectorAll('.drawer-tab').forEach(t => {
+    t.onclick = () => openDrawerTab(t.dataset.drawerTab);
+  });
+}
+
+function closeDrawer() {
+  document.getElementById('drawerBackdrop').classList.remove('open');
+  document.getElementById('municipioDrawer').classList.remove('open');
+  state.currentMunicipio = null;
+}
+
+function openDrawerTab(tab) {
+  document.querySelectorAll('.drawer-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.drawerTab === tab);
+  });
+  const body = document.getElementById('drawerBody');
+  const m = state.currentMunicipio;
+  if (!m) return;
+
+  if (tab === 'comercial') body.innerHTML = renderDrawerComercial(m);
+  else if (tab === 'publico') body.innerHTML = renderDrawerPublico(m);
+  else if (tab === 'atividades') renderDrawerAtividades(m);
+  else if (tab === 'historico') renderDrawerHistorico(m);
+
+  if (tab === 'comercial' || tab === 'publico') attachAutoSave();
+}
+
+function renderDrawerComercial(m) {
+  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+  const receita = (m.ef1_alunos || 0) * repasseEF1 + (m.ef2_alunos || 0) * repasseEF2;
+
+  const indicadoresOptions = state.indicadores.map(i =>
+    `<option value="${escapeHtml(i.codigo)}" ${m.indicacao === i.codigo ? 'selected' : ''}>${escapeHtml(i.codigo)} — ${escapeHtml(i.nome)}</option>`
+  ).join('');
+
+  // Responsável selecionado
+  const indSelecionado = m.indicacao ? state.indicadores.find(i => i.codigo === m.indicacao) : null;
+  const comissaoEst = indSelecionado ? receita * (indSelecionado.percentual_comissao || 0) : 0;
+
+  const avatarLetras = (nome) => (nome || '?').split(' ').slice(0,2).map(p => p[0]).join('').toUpperCase();
+  const avatarColor = (nome) => {
+    const colors = ['#1e5f3c','#2c5a8a','#b85c1a','#6b3fa0','#a93226','#2d7a6a'];
+    let h = 0; for (const c of (nome||'')) h = c.charCodeAt(0) + ((h << 5) - h);
+    return colors[Math.abs(h) % colors.length];
+  };
+
+  const mun = escapeHtml(m.municipio || '');
+  const uf = escapeHtml(m.uf || '');
+  const gSearch = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  const btnBusca = (query, title) => `<a href="${gSearch(query)}" target="_blank"
+    style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--line);
+    border-radius:3px;font-size:.72rem;color:var(--ink-dim);text-decoration:none;white-space:nowrap;
+    background:var(--bg);cursor:pointer;" title="${title}">
+    🔍 Google
+  </a>`;
+
+  return `
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      Contatos
+      <button onclick="buscarContatosIA('${m.id}')"
+        style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+        background:var(--accent);color:#fff;border:none;border-radius:4px;
+        font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;">
+        ✨ Buscar com IA
+      </button>
+    </div>
+    <div id="ia-status-${m.id}" style="font-size:.78rem;color:var(--ink-dim);margin-bottom:.5rem;display:none;"></div>
+    <div class="form-grid">
+      <div class="field">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Prefeito(a)
+          ${btnBusca(`prefeito ${m.municipio} ${m.uf} 2024`, `Buscar prefeito de ${m.municipio}`)}
+        </label>
+        <input data-field="prefeito" type="text" value="${escapeHtml(m.prefeito || '')}">
+      </div>
+      <div class="field">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Partido
+          ${btnBusca(`partido prefeito ${m.municipio} ${m.uf} 2024`, `Buscar partido do prefeito`)}
+        </label>
+        <input data-field="prefeito_partido" type="text" value="${escapeHtml(m.prefeito_partido || '')}">
+      </div>
+      <div class="field">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Secretário(a) de Educação
+          ${btnBusca(`secretário educação ${m.municipio} ${m.uf} prefeitura`, `Buscar secretário de educação de ${m.municipio}`)}
+        </label>
+        <input data-field="secretario_educacao" type="text" value="${escapeHtml(m.secretario_educacao || '')}">
+      </div>
+      <div class="field">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Telefone
+          ${btnBusca(`telefone prefeitura ${m.municipio} ${m.uf}`, `Buscar telefone da prefeitura`)}
+        </label>
+        <input data-field="telefone" type="text" value="${escapeHtml(m.telefone || '')}">
+      </div>
+      <div class="field full">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Email
+          ${btnBusca(`email contato prefeitura ${m.municipio} ${m.uf}`, `Buscar email da prefeitura`)}
+        </label>
+        <input data-field="email" type="email" value="${escapeHtml(m.email || '')}">
+      </div>
+      <div class="field full">
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Endereço
+          ${btnBusca(`endereço prefeitura ${m.municipio} ${m.uf}`, `Buscar endereço da prefeitura`)}
+        </label>
+        <input data-field="endereco" type="text" value="${escapeHtml(m.endereco || '')}">
+      </div>
+    </div>
+
+    <div class="section-title">Responsável Comercial</div>
+
+    ${indSelecionado ? `
+    <div style="background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px; padding:1rem; margin-bottom:1rem; display:flex; align-items:center; gap:1rem;">
+      <div style="width:44px; height:44px; border-radius:50%; background:${avatarColor(indSelecionado.nome)}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1rem; flex-shrink:0;">
+        ${avatarLetras(indSelecionado.nome)}
+      </div>
+      <div style="flex:1;">
+        <div style="font-weight:700; font-size:.95rem;">${escapeHtml(indSelecionado.nome)}</div>
+        <div style="font-size:.8rem; color:var(--ink-dim);">Comissão: ${indSelecionado.percentual_comissao ? (indSelecionado.percentual_comissao*100).toFixed(1)+'%' : '—'}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:.72rem; color:var(--ink-dim);">Est. comissão</div>
+        <div style="font-weight:700; color:var(--accent); font-size:1rem;">${fmtMoney(comissaoEst)}</div>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="form-grid">
+      <div class="field full">
+        <label>Responsável / Indicador</label>
+        <select data-field="indicacao">
+          <option value="">— Sem responsável</option>
+          ${indicadoresOptions}
+        </select>
+      </div>
+    </div>
+
+    <div class="section-title">Pipeline</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Farol</label>
+        <select data-field="farol">
+          <option value="">—</option>
+          <option value="Q"  ${m.farol==='Q'?'selected':''}>Quente</option>
+          <option value="M"  ${m.farol==='M'?'selected':''}>Médio</option>
+          <option value="Mo" ${m.farol==='Mo'?'selected':''}>Morno</option>
+          <option value="F"  ${m.farol==='F'?'selected':''}>Frio</option>
+          <option value="NV" ${m.farol==='NV'?'selected':''}>Não vale a pena</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select data-field="status">
+          <option value="">—</option>
+          <option value="Novo"            ${m.status==='Novo'?'selected':''}>Novo</option>
+          <option value="SQL"             ${m.status==='SQL'?'selected':''}>SQL</option>
+          <option value="R1"              ${m.status==='R1'?'selected':''}>R1</option>
+          <option value="R2"              ${m.status==='R2'?'selected':''}>R2</option>
+          <option value="R3"              ${m.status==='R3'?'selected':''}>R3</option>
+          <option value="Licitacao"       ${m.status==='Licitacao'?'selected':''}>Licitação</option>
+          <option value="Ganho"           ${m.status==='Ganho'?'selected':''}>Ganho</option>
+          <option value="Perdido"         ${m.status==='Perdido'?'selected':''}>Perdido</option>
+          <option value="Pausado"         ${m.status==='Pausado'?'selected':''}>Pausado</option>
+          <option value="Nao_Vale_Pena"   ${m.status==='Nao_Vale_Pena'?'selected':''}>Não vale a pena</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Data SQL</label>
+        <input data-field="data_sql" type="date" value="${m.data_sql || ''}">
+      </div>
+      <div class="field">
+        <label>Data R1</label>
+        <input data-field="data_r1" type="date" value="${m.data_r1 || ''}">
+      </div>
+      <div class="field">
+        <label>Data R2</label>
+        <input data-field="data_r2" type="date" value="${m.data_r2 || ''}">
+      </div>
+      <div class="field">
+        <label>Data R3</label>
+        <input data-field="data_r3" type="date" value="${m.data_r3 || ''}">
+      </div>
+      <div class="field">
+        <label>Data Licitação</label>
+        <input data-field="data_licitacao" type="date" value="${m.data_licitacao || ''}">
+      </div>
+      <div class="field">
+        <label>Data Win</label>
+        <input data-field="data_win" type="date" value="${m.data_win || ''}">
+      </div>
+      <div class="field full">
+        <label>Observações</label>
+        <textarea data-field="observacoes" rows="4">${escapeHtml(m.observacoes || '')}</textarea>
+      </div>
+    </div>
+
+    <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);">
+      <button class="btn danger small" onclick="excluirMunicipio('${m.id}')">Excluir município</button>
+    </div>
+  `;
+}
+
+// ============================================================
+// BUSCA DE CONTATOS VIA IA
+// ============================================================
+async function buscarContatosIA(munId) {
+  const m = state.municipios.find(x => x.id === munId);
+  if (!m) return;
+
+  const statusEl = document.getElementById(`ia-status-${munId}`);
+  if (!statusEl) return;
+
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '⏳ Buscando contatos com IA...';
+
+  // Desabilita botão durante busca
+  const btn = statusEl.previousElementSibling?.querySelector('button') ||
+    document.querySelector(`[onclick="buscarContatosIA('${munId}')"]`);
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+
+  try {
+    const prompt = `Busque na internet os contatos oficiais da prefeitura de ${m.municipio}, ${m.uf}, Brasil.
+
+Preciso encontrar:
+1. Nome do Secretário(a) de Educação atual (2024/2025)
+2. Email da Secretaria de Educação
+3. Telefone da Secretaria de Educação ou Prefeitura
+4. Email geral da Prefeitura
+5. Site oficial da Prefeitura
+
+Use web search para encontrar informações atualizadas. Priorize o site oficial da prefeitura (${m.municipio.toLowerCase().replace(/\s+/g,'')}${m.uf.toLowerCase()}.gov.br ou similar) e portais de transparência.
+
+Responda APENAS com JSON válido neste formato exato:
+{
+  "secretario_educacao": "Nome completo ou null",
+  "email_educacao": "email@exemplo.gov.br ou null",
+  "telefone": "(XX) XXXX-XXXX ou null",
+  "email_prefeitura": "email@exemplo.gov.br ou null",
+  "site_prefeitura": "https://... ou null",
+  "fonte": "URL de onde veio a informação"
+}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await response.json();
+
+    // Extrai o texto final da resposta
+    const textos = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+
+    // Tenta parsear JSON
+    const jsonMatch = textos.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('IA não retornou JSON válido');
+
+    const contatos = JSON.parse(jsonMatch[0]);
+
+    // Preenche os campos automaticamente
+    let atualizados = 0;
+    const updates = {};
+
+    if (contatos.secretario_educacao && !m.secretario_educacao) {
+      updates.secretario_educacao = contatos.secretario_educacao;
+      atualizados++;
+    }
+    if (contatos.telefone && !m.telefone) {
+      updates.telefone = contatos.telefone;
+      atualizados++;
+    }
+    if ((contatos.email_educacao || contatos.email_prefeitura) && !m.email) {
+      updates.email = contatos.email_educacao || contatos.email_prefeitura;
+      atualizados++;
+    }
+    if (contatos.site_prefeitura && !m.endereco) {
+      updates.endereco = contatos.site_prefeitura;
+      atualizados++;
+    }
+
+    if (atualizados > 0) {
+      // Salva no banco
+      updates.atualizado_por = state.user.id;
+      const { error } = await sb.from('municipios').update(updates).eq('id', munId);
+      if (error) throw new Error('Erro ao salvar: ' + error.message);
+
+      // Atualiza state local
+      const idx = state.municipios.findIndex(x => x.id === munId);
+      if (idx >= 0) Object.assign(state.municipios[idx], updates);
+
+      statusEl.innerHTML = `✅ ${atualizados} campo(s) preenchido(s) automaticamente! Fonte: ${contatos.fonte || 'web'}`;
+      statusEl.style.color = 'var(--accent)';
+
+      // Re-renderiza a aba para mostrar os novos valores
+      setTimeout(() => openDrawerTab('comercial'), 500);
+    } else if (Object.keys(contatos).some(k => contatos[k])) {
+      // Encontrou dados mas campos já estavam preenchidos
+      statusEl.innerHTML = `ℹ️ Encontrado: Sec. Ed.: ${contatos.secretario_educacao || '—'} · Tel: ${contatos.telefone || '—'} · Email: ${contatos.email_educacao || contatos.email_prefeitura || '—'} (campos já preenchidos)`;
+    } else {
+      statusEl.innerHTML = '⚠️ Nenhum contato encontrado para este município.';
+    }
+
+  } catch(e) {
+    console.error('Erro busca IA:', e);
+    statusEl.innerHTML = `❌ Erro: ${e.message}. Tente o botão 🔍 Google manualmente.`;
+    statusEl.style.color = 'var(--danger)';
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  }
+}
+
+function renderDrawerPublico(m) {
+  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+  const receita = (m.ef1_alunos || 0) * repasseEF1 + (m.ef2_alunos || 0) * repasseEF2;
+
+  return `
+    <div class="message warn">
+      <strong>Edição manual.</strong> Os campos abaixo são dados públicos. Você pode editar diretamente quando a fonte oficial não tiver o dado ou estiver desatualizada.
+    </div>
+
+    <div class="section-title">Identificação</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Município</label>
+        <input data-field="municipio" type="text" value="${escapeHtml(m.municipio || '')}">
+      </div>
+      <div class="field">
+        <label>UF</label>
+        <input data-field="uf" type="text" maxlength="2" value="${escapeHtml(m.uf || '')}">
+      </div>
+      <div class="field">
+        <label>Código IBGE</label>
+        <input data-field="codigo_ibge" type="text" value="${escapeHtml(m.codigo_ibge || '')}">
+      </div>
+      <div class="field">
+        <label>População 2022</label>
+        <input data-field="populacao_2022" type="number" value="${m.populacao_2022 || ''}">
+      </div>
+      <div class="field">
+        <label>Região Administrativa</label>
+        <input data-field="regiao_administrativa" type="text" value="${escapeHtml(m.regiao_administrativa || '')}">
+      </div>
+      <div class="field">
+        <label>Região de Governo</label>
+        <input data-field="regiao_governo" type="text" value="${escapeHtml(m.regiao_governo || '')}">
+      </div>
+    </div>
+
+    <div class="section-title">Alunos e FUNDEB</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Alunos EF1 (Anos Iniciais)</label>
+        <input data-field="ef1_alunos" type="number" value="${m.ef1_alunos || ''}">
+      </div>
+      <div class="field">
+        <label>Alunos EF2 (Anos Finais)</label>
+        <input data-field="ef2_alunos" type="number" value="${m.ef2_alunos || ''}">
+      </div>
+      <div class="field">
+        <label>Total EF (calculado)</label>
+        <div class="readonly-value ${!m.total_ef?'empty':''}">${m.total_ef != null ? fmtNum(m.total_ef) : 'Preencha EF1 e EF2'}</div>
+      </div>
+      <div class="field">
+        <label>Receita potencial (calculado)</label>
+        <div class="readonly-value ${!receita?'empty':''}">${receita ? fmtMoney(receita) : '—'}</div>
+      </div>
+      <div class="field">
+        <label>Educação total 2024 — liquidado (R$)</label>
+        <input data-field="educacao_total_liquidado" type="number" step="0.01" value="${m.educacao_total_liquidado || ''}">
+      </div>
+      <div class="field">
+        <label>FUNDEB 2024 — distribuído (R$)</label>
+        <input data-field="fundeb_distribuido" type="number" step="0.01" value="${m.fundeb_distribuido || ''}">
+      </div>
+    </div>
+
+    <div class="section-title">Indicadores de qualidade</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>IDHM</label>
+        <input data-field="idhm" type="number" step="0.001" min="0" max="1" value="${m.idhm || ''}">
+      </div>
+      <div class="field">
+        <label>IDEB EF1 (Anos Iniciais)</label>
+        <input data-field="ideb_ef1" type="number" step="0.01" value="${m.ideb_ef1 || ''}">
+      </div>
+      <div class="field">
+        <label>IDEB EF2 (Anos Finais)</label>
+        <input data-field="ideb_ef2" type="number" step="0.01" value="${m.ideb_ef2 || ''}">
+      </div>
+      <div class="field">
+        <label>IDEB EF (calculado)</label>
+        <div class="readonly-value ${m.ideb_ef==null?'empty':''}">${m.ideb_ef != null ? fmtNum(m.ideb_ef, 2) : '—'}</div>
+      </div>
+      <div class="field">
+        <label>SAEB EF1</label>
+        <input data-field="saeb_ef1" type="number" step="0.01" value="${m.saeb_ef1 || ''}">
+      </div>
+      <div class="field">
+        <label>SAEB EF2</label>
+        <input data-field="saeb_ef2" type="number" step="0.01" value="${m.saeb_ef2 || ''}">
+      </div>
+      <div class="field">
+        <label>SAEB EF (calculado)</label>
+        <div class="readonly-value ${m.saeb_ef==null?'empty':''}">${m.saeb_ef != null ? fmtNum(m.saeb_ef, 2) : '—'}</div>
+      </div>
+      <div class="field">
+        <label>Aprovação EF (%)</label>
+        <input data-field="aprovacao_ef" type="number" step="0.1" value="${m.aprovacao_ef || ''}">
+      </div>
+      <div class="field">
+        <label>Abandono EF (%)</label>
+        <input data-field="abandono_ef" type="number" step="0.1" value="${m.abandono_ef || ''}">
+      </div>
+      <div class="field">
+        <label>Evasão percebida (calculado)</label>
+        <div class="readonly-value ${m.evasao_percebida==null?'empty':''}">${m.evasao_percebida != null ? fmtNum(m.evasao_percebida, 2) : '—'}</div>
+      </div>
+      <div class="field full">
+        <label>Indicador de Performance EF (calculado)</label>
+        <div class="readonly-value ${m.indicador_performance_ef==null?'empty':''}">
+          ${m.indicador_performance_ef != null ? fmtNum(m.indicador_performance_ef, 3) + ' / 10' : 'Preencha IDEB, SAEB, Aprovação e Abandono'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function renderDrawerAtividades(m) {
+  const body = document.getElementById('drawerBody');
+  body.innerHTML = `<div class="loading" style="width:24px;height:24px;margin:3rem auto;display:block;"></div>`;
+
+  const { data: atividades } = await sb
+    .from('atividades')
+    .select('*')
+    .eq('municipio_id', m.id)
+    .order('data_atividade', { ascending: false });
+
+  body.innerHTML = `
+    <div class="section-title" style="margin-top:0">Nova atividade</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Tipo</label>
+        <select id="ativTipo">
+          <option value="ligacao">Ligação</option>
+          <option value="email">Email</option>
+          <option value="reuniao">Reunião</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="visita">Visita</option>
+          <option value="nota">Nota</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Data</label>
+        <input type="datetime-local" id="ativData" value="${new Date().toISOString().slice(0,16)}">
+      </div>
+      <div class="field full">
+        <label>Título</label>
+        <input type="text" id="ativTitulo" placeholder="Ex: Reunião com secretário">
+      </div>
+      <div class="field full">
+        <label>Descrição</label>
+        <textarea id="ativDesc" rows="3"></textarea>
+      </div>
+      <div class="field">
+        <label>Próximo passo</label>
+        <input type="text" id="ativProx">
+      </div>
+      <div class="field">
+        <label>Data do próximo passo</label>
+        <input type="date" id="ativProxData">
+      </div>
+    </div>
+    <div style="margin-top: 1rem;">
+      <button class="btn primary" onclick="adicionarAtividade('${m.id}')">Adicionar atividade</button>
+    </div>
+
+    <div class="section-title">Histórico de atividades (${(atividades || []).length})</div>
+    ${(atividades || []).length === 0
+      ? `<p style="color: var(--ink-dim);">Nenhuma atividade registrada ainda.</p>`
+      : atividades.map(a => `
+        <div style="padding: 1rem; border: 1px solid var(--line); border-radius: 3px; margin-bottom: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <strong>${escapeHtml(a.titulo)}</strong>
+            <span class="mono" style="font-size: 0.75rem; color: var(--ink-dim);">
+              ${escapeHtml(a.tipo.toUpperCase())} · ${new Date(a.data_atividade).toLocaleString('pt-BR')}
+            </span>
+          </div>
+          ${a.descricao ? `<div style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 0.5rem;">${escapeHtml(a.descricao)}</div>` : ''}
+          ${a.proximo_passo ? `<div style="font-size: 0.85rem;"><strong>Próximo:</strong> ${escapeHtml(a.proximo_passo)} ${a.data_proximo_passo ? `(${fmtDate(a.data_proximo_passo)})` : ''}</div>` : ''}
+        </div>
+      `).join('')
+    }
+  `;
+}
+
+async function adicionarAtividade(municipio_id) {
+  const tipo = document.getElementById('ativTipo').value;
+  const titulo = document.getElementById('ativTitulo').value.trim();
+  if (!titulo) { alert('Título é obrigatório'); return; }
+
+  const { error } = await sb.from('atividades').insert({
+    municipio_id,
+    tipo,
+    titulo,
+    descricao: document.getElementById('ativDesc').value.trim() || null,
+    data_atividade: document.getElementById('ativData').value || new Date().toISOString(),
+    proximo_passo: document.getElementById('ativProx').value.trim() || null,
+    data_proximo_passo: document.getElementById('ativProxData').value || null,
+    criado_por: state.user.id,
+  });
+  if (error) { alert('Erro: ' + error.message); return; }
+
+  renderDrawerAtividades(state.currentMunicipio);
+}
+
+async function renderDrawerHistorico(m) {
+  const body = document.getElementById('drawerBody');
+  body.innerHTML = `<div class="loading" style="width:24px;height:24px;margin:3rem auto;display:block;"></div>`;
+
+  const { data: hist } = await sb
+    .from('municipios_historico')
+    .select('*')
+    .eq('municipio_id', m.id)
+    .order('alterado_em', { ascending: false })
+    .limit(100);
+
+  body.innerHTML = (hist || []).length === 0
+    ? `<p style="color: var(--ink-dim); padding: 2rem; text-align: center;">Nenhuma alteração registrada ainda.</p>`
+    : `
+      <div class="section-title" style="margin-top:0">Últimas ${hist.length} alterações</div>
+      ${hist.map(h => `
+        <div style="padding: 0.75rem 1rem; border-left: 2px solid var(--accent); background: var(--bg); margin-bottom: 0.5rem;">
+          <div class="mono" style="font-size: 0.72rem; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.08em;">
+            ${new Date(h.alterado_em).toLocaleString('pt-BR')} · ${escapeHtml(h.campo)}
+          </div>
+          <div style="margin-top: 0.35rem; font-size: 0.88rem;">
+            <span style="color: var(--ink-dim); text-decoration: line-through;">${escapeHtml(h.valor_antigo || '(vazio)').slice(0, 80)}</span>
+            →
+            <strong>${escapeHtml(h.valor_novo || '(vazio)').slice(0, 80)}</strong>
+          </div>
+        </div>
+      `).join('')}
+    `;
+}
+
+// ============================================================
+// AUTO-SAVE
+// ============================================================
+const salvarCampo = debounce(async (field, value) => {
+  if (!state.currentMunicipio) return;
+  showSaveIndicator('saving', 'Salvando...');
+
+  // Converte valor
+  let v = value;
+  if (v === '') v = null;
+  else if (['ef1_alunos','ef2_alunos','populacao_2022'].includes(field)) v = parseInt(v);
+  else if (['educacao_total_liquidado','fundeb_distribuido','idhm','ideb_ef1','ideb_ef2','saeb_ef1','saeb_ef2','aprovacao_ef','abandono_ef'].includes(field)) v = parseFloat(v);
+
+  const updates = { [field]: v, atualizado_por: state.user.id };
+  const { data, error } = await sb
+    .from('municipios')
+    .update(updates)
+    .eq('id', state.currentMunicipio.id)
+    .select()
+    .single();
+
+  if (error) {
+    showSaveIndicator('error', 'Erro ao salvar');
+    console.error(error);
+    return;
+  }
+
+  // Atualiza estado local
+  state.currentMunicipio = data;
+  const idx = state.municipios.findIndex(m => m.id === data.id);
+  if (idx !== -1) state.municipios[idx] = data;
+
+  showSaveIndicator('saved', 'Salvo');
+}, 600);
+
+function attachAutoSave() {
+  document.querySelectorAll('#drawerBody [data-field]').forEach(el => {
+    el.addEventListener('input', () => salvarCampo(el.dataset.field, el.value));
+    el.addEventListener('change', () => salvarCampo(el.dataset.field, el.value));
+  });
+}
+
+// ============================================================
+// NOVO MUNICÍPIO
+// ============================================================
+async function novoMunicipio() {
+  const nome = prompt('Nome do município:');
+  if (!nome || !nome.trim()) return;
+  const uf = prompt('UF (2 letras):', 'SP');
+  if (!uf || uf.length !== 2) { alert('UF inválida'); return; }
+
+  const { data, error } = await sb
+    .from('municipios')
+    .insert({ municipio: nome.trim(), uf: uf.toUpperCase(), criado_por: state.user.id })
+    .select()
+    .single();
+
+  if (error) { alert('Erro: ' + error.message); return; }
+
+  state.municipios.push(data);
+  renderTable();
+  openMunicipio(data.id);
+}
+
+async function excluirMunicipio(id) {
+  if (!confirm('Excluir este município permanentemente? Esta ação não pode ser desfeita.')) return;
+  const { error } = await sb.from('municipios').delete().eq('id', id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  state.municipios = state.municipios.filter(m => m.id !== id);
+  closeDrawer();
+  renderTable();
+}
+
+// ============================================================
+// EXPORTAR CSV
+// ============================================================
+function exportarCSV() {
+  const items = getFilteredMunicipios();
+  const cols = ['municipio','uf','regiao_administrativa','populacao_2022','ef1_alunos','ef2_alunos','total_ef',
+                'fundeb_distribuido','idhm','ideb_ef','saeb_ef','aprovacao_ef','abandono_ef','indicador_performance_ef',
+                'prefeito','secretario_educacao','telefone','email','indicacao','farol','status','receita_potencial'];
+  const header = cols.join(';');
+  const rows = items.map(m => cols.map(c => {
+    const v = m[c];
+    if (v == null) return '';
+    const s = String(v).replace(/"/g, '""');
+    return s.includes(';') || s.includes('\n') ? `"${s}"` : s;
+  }).join(';'));
+  const csv = '\uFEFF' + [header, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `municipios_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// PIPELINE (KANBAN)
+// ============================================================
+function renderPipeline() {
+  const stages = [
+    { key: 'SQL', label: 'SQL' },
+    { key: 'R1', label: 'R1' },
+    { key: 'R2', label: 'R2' },
+    { key: 'R3', label: 'R3' },
+    { key: 'Licitacao', label: 'Licitação' },
+    { key: 'Ganho', label: 'Ganho' },
+  ];
+
+  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+
+  const groups = {};
+  stages.forEach(s => { groups[s.key] = []; });
+  state.municipios.forEach(m => {
+    if (groups[m.status]) groups[m.status].push(m);
+  });
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Funil · Arraste para mudar status</div>
+        <h1><em>Pipeline</em></h1>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="kanban">
+        ${stages.map(s => {
+          const mun = groups[s.key];
+          const rev = mun.reduce((sum, m) => sum + ((m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2), 0);
+          return `
+            <div class="kanban-col" data-status="${s.key}">
+              <div class="kanban-col-header">
+                <span class="label">${s.label}</span>
+                <span class="count">${mun.length} · ${fmtMoney(rev)}</span>
+              </div>
+              <div class="kanban-cards">
+                ${mun.map(m => {
+                  const r = (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2;
+                  return `
+                    <div class="kanban-card" draggable="true" data-id="${m.id}">
+                      <div class="city">${escapeHtml(m.municipio)}</div>
+                      ${m.farol ? `<span class="pill farol-${m.farol}">${escapeHtml(m.farol)}</span>` : ''}
+                      <div class="meta">${escapeHtml(m.uf || '')} · ${fmtNum(m.total_ef)} alunos</div>
+                      <div class="value">${fmtMoney(r)}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  // Drag & drop
+  document.querySelectorAll('.kanban-card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      card.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    card.addEventListener('click', () => openMunicipio(card.dataset.id));
+  });
+  document.querySelectorAll('.kanban-col').forEach(col => {
+    col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async e => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const id = e.dataTransfer.getData('text/plain');
+      const novoStatus = col.dataset.status;
+      await mudarStatus(id, novoStatus);
+    });
+  });
+}
+
+async function mudarStatus(id, novoStatus) {
+  const updates = { status: novoStatus, atualizado_por: state.user.id };
+  // Auto-preenche data da etapa
+  const dataField = `data_${novoStatus.toLowerCase()}`;
+  const validDates = ['data_sql','data_r1','data_r2','data_r3','data_licitacao','data_win'];
+  if (validDates.includes(dataField)) {
+    updates[dataField] = new Date().toISOString().slice(0, 10);
+  }
+  const { data, error } = await sb.from('municipios').update(updates).eq('id', id).select().single();
+  if (error) { alert('Erro: ' + error.message); return; }
+  const idx = state.municipios.findIndex(m => m.id === id);
+  if (idx !== -1) state.municipios[idx] = data;
+  renderPipeline();
+}
+
+// ============================================================
+// IMPORTAR CSV
+// ============================================================
+// ============================================================
+// FONTES DE DADOS
+// ============================================================
+async function renderImportar() {
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Dados · Gestão de fontes oficiais</div>
+        <h1><em>Fontes</em> de Dados</h1>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" onclick="uploadGenerico()">Upload de CSV geral</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="message">
+        Cada linha abaixo representa uma fonte oficial. Clique em <strong>Enviar arquivo</strong> para atualizar.
+        O sistema detecta automaticamente o formato e atualiza apenas as colunas correspondentes.
+        Sobe-se o novo, o antigo é substituído.
+      </div>
+      <div id="fontesTableWrap" class="table-wrap"></div>
+    </div>
+    <input type="file" id="fonteFileInput" accept=".csv,.xlsx,.ods,.xls,.zip" style="display:none">
+  `;
+
+  await carregarFontes();
+  renderFontesTable();
+}
+
+async function carregarFontes() {
+  const { data, error } = await sb.from('fontes_dados').select('*').order('nome');
+  if (error) { console.error('Erro ao carregar fontes:', error); return; }
+  state.fontes = data || [];
+}
+
+function renderFontesTable() {
+  const wrap = document.getElementById('fontesTableWrap');
+  if (!wrap) return;
+
+  const fmtDate = d => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  };
+
+  const statusPill = s => {
+    const labels = { ok: 'Atualizada', pendente: 'Pendente', erro: 'Erro', parcial: 'Parcial' };
+    return `<span class="pill status-${s === 'ok' ? 'Ganho' : s === 'erro' ? 'Perdido' : s === 'parcial' ? 'R2' : 'Novo'}">${labels[s] || s}</span>`;
+  };
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Fonte</th>
+        <th>Órgão</th>
+        <th>Ano</th>
+        <th>Colunas</th>
+        <th class="num">Cobertura</th>
+        <th>Status</th>
+        <th>Ações</th>
+      </tr></thead>
+      <tbody>
+        ${(state.fontes || []).map(f => `
+          <tr>
+            <td>
+              <strong>${escapeHtml(f.nome)}</strong>
+              <br><span style="font-size:.75rem; opacity:.6">
+                ${f.ultima_atualizacao ? fmtDate(f.ultima_atualizacao) : 'Nunca atualizado'}
+                ${f.arquivo_nome_original ? ` · ${escapeHtml(f.arquivo_nome_original)}` : ''}
+              </span>
+            </td>
+            <td>${escapeHtml(f.orgao || '—')}</td>
+            <td>${escapeHtml(f.ano || '—')}</td>
+            <td><code class="mono" style="font-size:.7rem">${(f.colunas_afetadas || []).join(', ')}</code></td>
+            <td class="num">${f.cobertura_municipios || 0}</td>
+            <td>${statusPill(f.status)}</td>
+            <td style="white-space:nowrap">
+              <button class="btn ghost" style="padding:4px 10px; font-size:.8rem" onclick="solicitarUpload('${f.codigo}')">↑ Enviar</button>
+              ${f.url_oficial ? `<a class="btn ghost" style="padding:4px 10px; font-size:.8rem; margin-left:4px" href="${escapeHtml(f.url_oficial)}" target="_blank">↗</a>` : ''}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div id="importResult" style="margin-top: 1.5rem;"></div>
+  `;
+}
+
+function solicitarUpload(codigoFonte) {
+  state.fonteUpload = codigoFonte;
+  const input = document.getElementById('fonteFileInput');
+  input.value = '';
+  input.onchange = (e) => {
+    if (e.target.files.length) processarArquivoFonte(e.target.files[0], codigoFonte);
+  };
+  input.click();
+}
+
+function uploadGenerico() {
+  state.fonteUpload = null;
+  const input = document.getElementById('fonteFileInput');
+  input.value = '';
+  input.onchange = (e) => {
+    if (e.target.files.length) processarCSVGenerico(e.target.files[0]);
+  };
+  input.click();
+}
+
+// ------------------------------------------------------------
+// PARSERS
+// ------------------------------------------------------------
+function parseCSVText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const firstLine = lines[0];
+  const sep = firstLine.includes(';') ? ';' : ',';
+  const parseRow = (line) => {
+    const cols = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; continue; }
+      if (c === sep && !inQuote) { cols.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    cols.push(cur);
+    return cols.map(c => c.trim());
+  };
+  const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseRow(lines[i]);
+    const row = {};
+    headers.forEach((h, j) => { row[h] = cols[j]; });
+    rows.push(row);
+  }
+  return { headers, rows };
+}
+
+function toNumBR(v) {
+  if (v == null || v === '' || v === '--' || v === '-') return null;
+  if (typeof v === 'number') return v;
+  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function normalizeCodigoIbge(v) {
+  if (!v) return null;
+  return String(v).trim().replace(/\.0$/, '');
+}
+
+// ------------------------------------------------------------
+// PROCESSAMENTO POR FONTE
+// ------------------------------------------------------------
+async function processarArquivoFonte(file, codigoFonte) {
+  const result = document.getElementById('importResult');
+  result.innerHTML = `<div class="message">Processando <strong>${escapeHtml(file.name)}</strong> como <code class="mono">${codigoFonte}</code>...</div>`;
+
+  try {
+    let updates = [];
+    let colunasAfetadas = [];
+    let cobertura = 0;
+
+    const fonteInfo = state.fontes.find(f => f.codigo === codigoFonte);
+
+    switch (codigoFonte) {
+      case 'ibge_populacao_2022':
+        ({ updates, colunasAfetadas } = await parseIBGEPopulacao(file));
+        break;
+      case 'inep_matriculas':
+        ({ updates, colunasAfetadas } = await parseINEPMatriculas(file));
+        break;
+      case 'inep_rendimento':
+        ({ updates, colunasAfetadas } = await parseINEPRendimento(file));
+        break;
+      case 'inep_ideb':
+        ({ updates, colunasAfetadas } = await parseINEPIdeb(file));
+        break;
+      case 'inep_saeb':
+        ({ updates, colunasAfetadas } = await parseINEPSaeb(file));
+        break;
+      case 'pnud_idhm':
+        ({ updates, colunasAfetadas } = await parsePNUDIdhm(file));
+        break;
+      case 'fnde_fundeb':
+        ({ updates, colunasAfetadas } = await parseFNDEFundeb(file));
+        break;
+      case 'siconfi_educacao':
+        ({ updates, colunasAfetadas } = await parseSICONFIEducacao(file));
+        break;
+      case 'tse_prefeitos_2024':
+        ({ updates, colunasAfetadas } = await parseTSEPrefeitos(file));
+        break;
+      default:
+        throw new Error('Fonte não reconhecida: ' + codigoFonte);
+    }
+
+    if (updates.length === 0) {
+      result.innerHTML = `<div class="message error">Nenhum registro válido encontrado no arquivo. Verifique se o arquivo corresponde à fonte <strong>${escapeHtml(fonteInfo.nome)}</strong>.</div>`;
+      return;
+    }
+
+    result.innerHTML = `<div class="message">Arquivo processado. Atualizando ${updates.length} municípios no banco...</div>`;
+    cobertura = await aplicarUpdatesMunicipios(updates, colunasAfetadas);
+
+    // Atualiza metadata da fonte
+    const { error: errFonte } = await sb.from('fontes_dados').update({
+      arquivo_nome_original: file.name,
+      cobertura_municipios: cobertura,
+      ultima_atualizacao: new Date().toISOString(),
+      ultima_atualizacao_usuario: state.user.id,
+      status: cobertura > 0 ? 'ok' : 'erro',
+    }).eq('codigo', codigoFonte);
+    if (errFonte) console.warn('Erro ao atualizar metadata:', errFonte);
+
+    await carregarFontes();
+    await loadCoreData();
+    renderFontesTable();
+
+    result.innerHTML = `<div class="message success">
+      <strong>Fonte atualizada:</strong> ${escapeHtml(fonteInfo.nome)}.<br>
+      ${cobertura} municípios afetados. Colunas: <code class="mono">${colunasAfetadas.join(', ')}</code>.
+    </div>`;
+  } catch (err) {
+    console.error('Erro no processamento:', err);
+    result.innerHTML = `<div class="message error"><strong>Erro:</strong> ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+async function aplicarUpdatesMunicipios(updates, colunasAfetadas) {
+  // Mapa codigo_ibge -> dados a atualizar
+  // Estratégia: pra cada município com codigo_ibge, update. Pra cada sem codigo, skip.
+  const byIbge = new Map();
+  for (const u of updates) {
+    const ibge = normalizeCodigoIbge(u.codigo_ibge);
+    if (!ibge) continue;
+    byIbge.set(ibge, u);
+  }
+
+  // Traz todos os ids dos municipios no banco por codigo_ibge
+  let afetados = 0;
+  const entries = Array.from(byIbge.entries());
+  for (let i = 0; i < entries.length; i += 50) {
+    const slice = entries.slice(i, i + 50);
+    const promises = slice.map(async ([ibge, u]) => {
+      const patch = {};
+      for (const c of colunasAfetadas) {
+        if (u[c] !== undefined) patch[c] = u[c];
+      }
+      patch.atualizado_por = state.user.id;
+      const { error, count } = await sb.from('municipios')
+        .update(patch, { count: 'exact' })
+        .eq('codigo_ibge', ibge);
+      if (error) { console.warn('Erro update', ibge, error); return 0; }
+      return count || 0;
+    });
+    const counts = await Promise.all(promises);
+    afetados += counts.reduce((a,b) => a+b, 0);
+  }
+
+  return afetados;
+}
+
+// ------------------------------------------------------------
+// PARSERS ESPECÍFICOS
+// ------------------------------------------------------------
+
+// IBGE População 2022 - formato SIDRA ou planilha Censo
+async function parseIBGEPopulacao(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+
+  // Tenta encontrar colunas de código IBGE e população
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+  const first = rows[0];
+  const cols = Object.keys(first).map(k => k.toLowerCase());
+
+  // Detecta colunas comuns: "cod", "código", "codigo_ibge", "municipio_codigo"
+  // População: "populacao", "pop", "habitantes", "v93", "valor"
+  const codCol = findColumn(cols, ['codigo_ibge','cod_munic','codigo_municipio','cod_mun','cod','codmun','id_municipio']);
+  const popCol = findColumn(cols, ['populacao_2022','populacao','pop','habitantes','valor','v93']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas encontradas: ' + cols.join(', '));
+  if (!popCol) throw new Error('Coluna de população não identificada. Colunas encontradas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const pop = toNumBR(getValueCI(r, popCol));
+    if (codigo && pop != null) {
+      updates.push({ codigo_ibge: codigo, populacao_2022: pop });
+    }
+  }
+  return { updates, colunasAfetadas: ['populacao_2022'] };
+}
+
+// INEP Matrículas (Censo Escolar) - ZIP com microdados ou CSV já agregado
+async function parseINEPMatriculas(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'zip') {
+    throw new Error('Microdados do Censo Escolar em ZIP não são processados no navegador por tamanho. Use a Importação CSV geral com arquivo já consolidado, ou rode o script de processamento no servidor.');
+  }
+  // Caso seja XLSX/CSV com colunas codigo_ibge, ef1_alunos, ef2_alunos
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const ef1Col = findColumn(cols, ['ef1_alunos','qt_mat_fund_ai','anos_iniciais','ef1']);
+  const ef2Col = findColumn(cols, ['ef2_alunos','qt_mat_fund_af','anos_finais','ef2']);
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada.');
+  if (!ef1Col && !ef2Col) throw new Error('Colunas de matrículas (EF1/EF2) não identificadas.');
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (ef1Col) u.ef1_alunos = toNumBR(getValueCI(r, ef1Col));
+    if (ef2Col) u.ef2_alunos = toNumBR(getValueCI(r, ef2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['ef1_alunos','ef2_alunos'] };
+}
+
+// INEP Taxas de Rendimento - XLSX oficial do INEP
+async function parseINEPRendimento(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext !== 'xlsx' && ext !== 'csv') throw new Error('Use o XLSX oficial do INEP (tx_rend_municipios_YYYY.xlsx).');
+
+  let rows;
+  if (ext === 'xlsx') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  // INEP usa linha 9 como cabeçalho técnico: NU_ANO_CENSO, NO_REGIAO, SG_UF, CO_MUNICIPIO, NO_MUNICIPIO, NO_CATEGORIA, NO_DEPENDENCIA, 1_CAT_FUN, ...
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic']);
+  const categoriaCol = findColumn(cols, ['no_categoria','categoria','localizacao']);
+  const dependenciaCol = findColumn(cols, ['no_dependencia','dependencia']);
+  const aprovCol = findColumn(cols, ['1_cat_fun','aprovacao_ef','taxa_aprovacao_ef']);
+  const abanCol = findColumn(cols, ['3_cat_fun','abandono_ef','taxa_abandono_ef']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    // Filtra: categoria=Total, dependencia=Total (ou sem filtro se não tiver essas colunas)
+    if (categoriaCol) {
+      const cat = String(getValueCI(r, categoriaCol) || '').toLowerCase();
+      if (cat && cat !== 'total') continue;
+    }
+    if (dependenciaCol) {
+      const dep = String(getValueCI(r, dependenciaCol) || '').toLowerCase();
+      if (dep && dep !== 'total') continue;
+    }
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (aprovCol) u.aprovacao_ef = toNumBR(getValueCI(r, aprovCol));
+    if (abanCol) u.abandono_ef = toNumBR(getValueCI(r, abanCol));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['aprovacao_ef','abandono_ef'] };
+}
+
+// INEP IDEB
+async function parseINEPIdeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const ideb1Col = findColumn(cols, ['ideb_ef1','ideb_ai','vl_observado_anos_iniciais','ideb_iniciais']);
+  const ideb2Col = findColumn(cols, ['ideb_ef2','ideb_af','vl_observado_anos_finais','ideb_finais']);
+  const redeCol = findColumn(cols, ['rede','nm_dependencia_adm','dependencia']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!ideb1Col && !ideb2Col) throw new Error('Colunas de IDEB não identificadas. Colunas: ' + cols.join(', '));
+
+  // Se tiver coluna rede, filtra por "Pública" ou "Total"
+  const updates = [];
+  for (const r of rows) {
+    if (redeCol) {
+      const rede = String(getValueCI(r, redeCol) || '').toLowerCase();
+      if (rede && !rede.includes('pública') && !rede.includes('publica') && rede !== 'total') continue;
+    }
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (ideb1Col) u.ideb_ef1 = toNumBR(getValueCI(r, ideb1Col));
+    if (ideb2Col) u.ideb_ef2 = toNumBR(getValueCI(r, ideb2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['ideb_ef1','ideb_ef2'] };
+}
+
+// INEP SAEB
+async function parseINEPSaeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const saeb1Col = findColumn(cols, ['saeb_ef1','saeb_ai','media_5ef_mt','media_5ef','media_ai']);
+  const saeb2Col = findColumn(cols, ['saeb_ef2','saeb_af','media_9ef_mt','media_9ef','media_af']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!saeb1Col && !saeb2Col) throw new Error('Colunas de SAEB não identificadas. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (saeb1Col) u.saeb_ef1 = toNumBR(getValueCI(r, saeb1Col));
+    if (saeb2Col) u.saeb_ef2 = toNumBR(getValueCI(r, saeb2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['saeb_ef1','saeb_ef2'] };
+}
+
+// Atlas Brasil IDHM
+async function parsePNUDIdhm(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','codmun7','cod_mun','codigo_municipio','id_municipio','codmun']);
+  const idhmCol = findColumn(cols, ['idhm','idhm_2010','idhm_m','valor']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!idhmCol) throw new Error('Coluna de IDHM não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const idhm = toNumBR(getValueCI(r, idhmCol));
+    if (codigo && idhm != null) updates.push({ codigo_ibge: codigo, idhm });
+  }
+  return { updates, colunasAfetadas: ['idhm'] };
+}
+
+// FNDE FUNDEB
+async function parseFNDEFundeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','cod_mun','codigo_municipio','id_municipio','codmun']);
+  const valCol = findColumn(cols, ['fundeb_distribuido','valor_distribuido','vl_distribuido','fundeb','valor','total']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!valCol) throw new Error('Coluna de valor do FUNDEB não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const val = toNumBR(getValueCI(r, valCol));
+    if (codigo && val != null) updates.push({ codigo_ibge: codigo, fundeb_distribuido: val });
+  }
+  return { updates, colunasAfetadas: ['fundeb_distribuido'] };
+}
+
+// SICONFI Despesa em Educação
+async function parseSICONFIEducacao(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','cod_ibge','cod_mun','codigo_municipio','id_municipio']);
+  const valCol = findColumn(cols, ['educacao_total_liquidado','despesa_liquidada','liquidado','valor','total']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!valCol) throw new Error('Coluna de valor da despesa não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const val = toNumBR(getValueCI(r, valCol));
+    if (codigo && val != null) updates.push({ codigo_ibge: codigo, educacao_total_liquidado: val });
+  }
+  return { updates, colunasAfetadas: ['educacao_total_liquidado'] };
+}
+
+// TSE Prefeitos eleitos 2024
+async function parseTSEPrefeitos(file) {
+  // Arquivo: consulta_cand_2024_BRASIL.csv (separador ;, encoding latin-1)
+  // Colunas relevantes: DS_CARGO, DS_SIT_TOT_TURNO, NM_CANDIDATO, SG_UF, NM_UE, DS_GENERO
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    // CSV do TSE é windows-1252 (latin-1)
+    const buf = await file.arrayBuffer();
+    const decoder = new TextDecoder('windows-1252');
+    const text = decoder.decode(buf);
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const cargoCol = findColumn(cols, ['ds_cargo','cargo']);
+  const sitCol = findColumn(cols, ['ds_sit_tot_turno','situacao','ds_situacao_candidato_turno']);
+  const nomeCol = findColumn(cols, ['nm_candidato','nome_candidato','nm_urna_candidato','nome']);
+  const ufCol = findColumn(cols, ['sg_uf','uf']);
+  const munCol = findColumn(cols, ['nm_ue','nome_municipio','nm_municipio','municipio']);
+  const generoCol = findColumn(cols, ['ds_genero','genero']);
+
+  if (!nomeCol) throw new Error('Coluna de nome do candidato não encontrada. Colunas: ' + cols.join(', '));
+  if (!munCol) throw new Error('Coluna de município não encontrada. Colunas: ' + cols.join(', '));
+
+  // Monta índice nome_municipio+uf → id do município no state
+  // Normaliza pra comparação
+  const norm = s => String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const munIndex = new Map();
+  for (const m of state.municipios) {
+    const key = norm(m.municipio) + '|' + (m.uf || '').toLowerCase();
+    munIndex.set(key, m.codigo_ibge);
+  }
+
+  const updates = [];
+  let semMatch = 0;
+
+  for (const r of rows) {
+    // Filtra só prefeitos eleitos
+    if (cargoCol) {
+      const cargo = norm(getValueCI(r, cargoCol));
+      if (!cargo.includes('prefeito')) continue;
+    }
+    if (sitCol) {
+      const sit = norm(getValueCI(r, sitCol));
+      if (!sit.includes('eleito')) continue;
+    }
+
+    const nome = String(getValueCI(r, nomeCol) || '').trim();
+    const uf = String(getValueCI(r, ufCol) || '').trim().toUpperCase();
+    const mun = String(getValueCI(r, munCol) || '').trim();
+    const genero = String(getValueCI(r, generoCol) || '').trim().toLowerCase();
+
+    if (!nome || !mun) continue;
+
+    // Busca o código IBGE pelo nome do município + UF
+    const key = norm(mun) + '|' + uf.toLowerCase();
+    const codigoIbge = munIndex.get(key);
+
+    if (!codigoIbge) {
+      semMatch++;
+      continue;
+    }
+
+    // Formata nome: capitaliza cada palavra
+    const nomeFormatado = nome.split(' ')
+      .map(p => p.length <= 2 ? p.toLowerCase() : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+      .join(' ');
+
+    updates.push({
+      codigo_ibge: String(codigoIbge),
+      prefeito: nomeFormatado,
+    });
+  }
+
+  if (semMatch > 0) console.warn(`TSE: ${semMatch} municípios sem match por nome`);
+
+  return { updates, colunasAfetadas: ['prefeito'] };
+}
+
+// ------------------------------------------------------------
+// UTILITÁRIOS
+// ------------------------------------------------------------
+function findColumn(cols, candidates) {
+  for (const cand of candidates) {
+    const found = cols.find(c => c === cand);
+    if (found) return found;
+  }
+  // partial match
+  for (const cand of candidates) {
+    const found = cols.find(c => c.includes(cand));
+    if (found) return found;
+  }
+  return null;
+}
+
+function getValueCI(row, col) {
+  // Busca valor case-insensitive
+  const keys = Object.keys(row);
+  const lower = col.toLowerCase();
+  const key = keys.find(k => k.toLowerCase() === lower);
+  return key ? row[key] : undefined;
+}
+
+async function parseXLSX(file, opts = {}) {
+  // Usa SheetJS dinamicamente
+  if (!window.XLSX) {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  }
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+
+  // Converte pra array de arrays primeiro pra detectar linha de cabeçalho
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  if (aoa.length === 0) return [];
+
+  let headerRow = 0;
+  if (opts.headerRowDetect) {
+    // Detecta primeira linha com >= 4 colunas preenchidas e que contenha palavras técnicas
+    for (let i = 0; i < Math.min(aoa.length, 20); i++) {
+      const row = aoa[i];
+      const filled = row.filter(c => c !== '' && c != null).length;
+      const txt = row.join(' ').toLowerCase();
+      if (filled >= 4 && (
+        /co_munic|cod.?_?ibge|codmun|municipio/i.test(txt) &&
+        !/ministério|instituto|taxas de rendimento|tabela|total/i.test(txt.substring(0, 100))
+      )) {
+        headerRow = i;
+        break;
+      }
+    }
+  }
+
+  const headers = aoa[headerRow].map(h => String(h || '').trim());
+  const rows = [];
+  for (let i = headerRow + 1; i < aoa.length; i++) {
+    const row = {};
+    headers.forEach((h, j) => { row[h] = aoa[i][j]; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// ------------------------------------------------------------
+// UPLOAD CSV GENÉRICO (como antes)
+// ------------------------------------------------------------
+async function processarCSVGenerico(file) {
+  const result = document.getElementById('importResult');
+  result.innerHTML = '<div class="message">Processando arquivo...</div>';
+
+  const text = await file.text();
+  const { headers, rows } = parseCSVText(text);
+  if (rows.length === 0) {
+    result.innerHTML = '<div class="message error">CSV vazio ou sem dados.</div>';
+    return;
+  }
+
+  const numFields = ['populacao_2022','ef1_alunos','ef2_alunos','educacao_total_liquidado','fundeb_distribuido',
+                     'idhm','ideb_ef1','ideb_ef2','saeb_ef1','saeb_ef2','aprovacao_ef','abandono_ef'];
+
+  const registros = [];
+  const erros = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const row = {};
+    for (const [h, v] of Object.entries(r)) {
+      if (v === '' || v == null) { row[h] = null; continue; }
+      if (numFields.includes(h)) {
+        row[h] = toNumBR(v);
+      } else {
+        row[h] = String(v).trim();
+      }
+    }
+    if (!row.municipio) { erros.push(`Linha ${i+2}: sem município`); continue; }
+    if (!row.uf) row.uf = 'SP';
+    row.uf = row.uf.toUpperCase().slice(0, 2);
+    row.criado_por = state.user.id;
+    row.atualizado_por = state.user.id;
+    registros.push(row);
+  }
+
+  if (registros.length === 0) {
+    result.innerHTML = `<div class="message error">Nenhum registro válido. Erros:<br>${erros.join('<br>')}</div>`;
+    return;
+  }
+
+  result.innerHTML = `<div class="message">Importando ${registros.length} registros...</div>`;
+
+  let inseridos = 0;
+  let falhas = 0;
+  for (let i = 0; i < registros.length; i += 100) {
+    const batch = registros.slice(i, i + 100);
+    const { error } = await sb.from('municipios').insert(batch);
+    if (error) {
+      falhas += batch.length;
+      console.error('Erro no lote:', error);
+    } else {
+      inseridos += batch.length;
+    }
+  }
+
+  await loadCoreData();
+
+  result.innerHTML = `<div class="message ${falhas ? 'warn' : 'success'}">
+    <strong>Importação concluída.</strong> ${inseridos} registros inseridos, ${falhas} falhas.
+    ${erros.length ? `<br><br>Avisos: <br>${erros.slice(0, 10).join('<br>')}${erros.length > 10 ? `<br>... e mais ${erros.length - 10}` : ''}` : ''}
+  </div>`;
+}
+
+// ============================================================
+// INDICADORES
+// ============================================================
+async function renderIndicadores() {
+  const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Parceiros · Quem traz os leads</div>
+        <h1><em>Indicadores</em></h1>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="novoIndicador()">+ Novo indicador</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Código</th><th>Nome</th><th>Email</th><th>Telefone</th><th class="num">% Comissão</th>
+            <th class="num">Municípios</th><th class="num">Receita potencial</th><th>Ativo</th>
+          </tr></thead>
+          <tbody>
+            ${(indicadores || []).map(i => {
+              const muns = state.municipios.filter(m => m.indicacao === i.codigo);
+              const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+              const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+              const rev = muns.reduce((s,m) => s + (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2, 0);
+              const comissao = rev * (i.percentual_comissao || 0);
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(i.codigo)}</strong></td>
+                  <td>${escapeHtml(i.nome)}</td>
+                  <td>${escapeHtml(i.email || '—')}</td>
+                  <td>${escapeHtml(i.telefone || '—')}</td>
+                  <td class="num">${fmtPct((i.percentual_comissao || 0) * 100, 2)}</td>
+                  <td class="num">${muns.length}</td>
+                  <td class="num">${fmtMoney(comissao)}</td>
+                  <td>${i.ativo ? '✓' : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function novoIndicador() {
+  const codigo = prompt('Código do indicador (ex: LCM, MNS):');
+  if (!codigo) return;
+  const nome = prompt('Nome completo:');
+  if (!nome) return;
+  const { error } = await sb.from('indicadores_externos').insert({
+    codigo: codigo.trim().toUpperCase(),
+    nome: nome.trim(),
+    percentual_comissao: 0.06,
+    ativo: true,
+  });
+  if (error) { alert('Erro: ' + error.message); return; }
+  renderIndicadores();
+}
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
+function renderConfiguracoes() {
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Sistema</div>
+        <h1><em>Configurações</em></h1>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="message">
+        <strong>Seu perfil:</strong> ${escapeHtml(state.perfil?.nome || '')} ·
+        Papel atual: <code class="mono">${escapeHtml(state.perfil?.papel || 'sem papel')}</code>
+        ${state.perfil?.papel !== 'admin' ? `
+          <br><br>Para se promover a admin, vá no SQL Editor do Supabase e execute:
+          <br><code class="mono" style="display: block; padding: 0.5rem; background: var(--bg); margin-top: 0.5rem;">update public.perfis set papel = 'admin' where email = '${escapeHtml(state.user.email)}';</code>
+        ` : ''}
+      </div>
+
+      <div class="section-title">Valores de repasse por aluno</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Repasse EF1 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1 || 400}">
+        </div>
+        <div class="field">
+          <label>Repasse EF2 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2 || 500}">
+        </div>
+        <div class="field">
+          <label>% Redesa</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa || 0.5}">
+        </div>
+      </div>
+
+      <div class="section-title">Cenários de conversão</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Agressivo</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.agressivo" value="${(state.configuracoes.cenarios_conversao||{}).agressivo || 1}">
+        </div>
+        <div class="field">
+          <label>Realista</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.realista" value="${(state.configuracoes.cenarios_conversao||{}).realista || 0.5}">
+        </div>
+        <div class="field">
+          <label>Conservador</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.conservador" value="${(state.configuracoes.cenarios_conversao||{}).conservador || 0.25}">
+        </div>
+      </div>
+
+      <div class="section-title">Pesos do indicador de performance</div>
+      <div class="message warn">
+        Alterar estes pesos não recalcula automaticamente os scores já salvos. Após mudar, reimporte os dados ou edite os municípios para recalcular.
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Peso IDEB</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.ideb" value="${(state.configuracoes.pesos_score||{}).ideb || 0.35}">
+        </div>
+        <div class="field">
+          <label>Peso SAEB</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.saeb" value="${(state.configuracoes.pesos_score||{}).saeb || 0.35}">
+        </div>
+        <div class="field">
+          <label>Peso Evasão</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.evasao" value="${(state.configuracoes.pesos_score||{}).evasao || 0.30}">
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem;">
+        <button class="btn primary" onclick="salvarConfiguracoes()">Salvar configurações</button>
+      </div>
+    </div>
+  `;
+}
+
+async function salvarConfiguracoes() {
+  const simples = document.querySelectorAll('[data-cfg]');
+  const nested = document.querySelectorAll('[data-cfg-nested]');
+
+  const updates = [];
+
+  simples.forEach(el => {
+    updates.push({
+      chave: el.dataset.cfg,
+      valor: parseFloat(el.value),
+      atualizado_por: state.user.id,
+    });
+  });
+
+  // Agrupa nested
+  const grupos = {};
+  nested.forEach(el => {
+    const [grupo, sub] = el.dataset.cfgNested.split('.');
+    grupos[grupo] = grupos[grupo] || {};
+    grupos[grupo][sub] = parseFloat(el.value);
+  });
+  Object.entries(grupos).forEach(([chave, valor]) => {
+    updates.push({ chave, valor, atualizado_por: state.user.id });
+  });
+
+  for (const u of updates) {
+    await sb.from('configuracoes').upsert(u);
+  }
+
+  await loadCoreData();
+  alert('Configurações salvas.');
+  renderConfiguracoes();
+}
+
+// ============================================================
+// START
+// ============================================================
+initApp();
+</script>
+</body>
+</html>
