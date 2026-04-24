@@ -4115,61 +4115,157 @@ async function processarCSVGenerico(file) {
 async function renderIndicadores() {
   const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
 
+  // Parâmetros do modelo de remuneração (Excel)
+  const IMPOSTOS  = 0.0318;
+  const REDESA    = 0.50;
+  const MODELO = {
+    apresentador: 0.20,
+    consolidador: 0.00,
+    gestao:       0.10,
+    opex:         0.10,
+    internalizado:0.25,
+    equipe:       0.3225,
+    fundo_reserva:0.0275,
+  };
+
+  // Receita pipeline ativo
+  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
+  const PESOS  = {SQL:0.25,R1:0.30,R2:0.40,R3:0.50,Licitacao:0.85};
+  const ativos = state.municipios.filter(m => ETAPAS.includes(m.status));
+  const forecastBase = ativos.reduce((s,m) => {
+    const rec = (m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500;
+    return s + rec*(PESOS[m.status]||0.25);
+  }, 0);
+  const recLiq  = forecastBase*(1-IMPOSTOS);
+  const redesa  = recLiq*REDESA;
+
+  // Por indicador — receita do pipeline ativo
+  const calcIndicador = (ind) => {
+    const muns = ativos.filter(m => m.indicacao === ind.codigo);
+    const rec = muns.reduce((s,m) => {
+      const r = (m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500;
+      return s + r*(PESOS[m.status]||0.25);
+    }, 0);
+    return { muns, rec, comissao: rec*(1-IMPOSTOS)*REDESA*(ind.percentual_comissao||0) };
+  };
+
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <div class="heading">
-        <div class="crumb">Parceiros · Quem traz os leads</div>
-        <h1><em>Indicadores</em></h1>
+        <div class="crumb">Parceiros · Modelo de remuneração</div>
+        <h1><em>Indicadores</em> & Remuneração</h1>
       </div>
       <div class="actions">
         <button class="btn primary" onclick="novoIndicador()">+ Novo indicador</button>
       </div>
     </div>
     <div class="page-body">
+
+      <!-- Modelo de Remuneração -->
+      <div style="margin-bottom:1.5rem;">
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Modelo de Remuneração — Distribuição do Faturamento Redesa</h2>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1rem;">
+          <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;text-align:center;">
+            <div style="font-size:.75rem;opacity:.8;margin-bottom:.25rem;">Forecast Ajustado</div>
+            <div style="font-size:1.3rem;font-weight:700;">${fmtMoney(forecastBase)}</div>
+          </div>
+          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
+            <div style="font-size:.75rem;color:var(--ink-dim);margin-bottom:.25rem;">Receita Líquida (−${(IMPOSTOS*100).toFixed(2)}%)</div>
+            <div style="font-size:1.3rem;font-weight:700;">${fmtMoney(recLiq)}</div>
+          </div>
+          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
+            <div style="font-size:.75rem;color:var(--ink-dim);margin-bottom:.25rem;">Faturamento Redesa (50%)</div>
+            <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">${fmtMoney(redesa)}</div>
+          </div>
+          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
+            <div style="font-size:.75rem;color:var(--ink-dim);margin-bottom:.25rem;">EBITDA (~18.7%)</div>
+            <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">${fmtMoney(redesa*0.18728)}</div>
+          </div>
+        </div>
+
+        <!-- Distribuição do Redesa -->
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+            <thead>
+              <tr style="background:var(--bg);">
+                <th style="padding:.6rem .75rem;text-align:left;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Papel</th>
+                <th style="padding:.6rem .75rem;text-align:right;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">% Redesa</th>
+                <th style="padding:.6rem .75rem;text-align:right;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Valor Est.</th>
+                <th style="padding:.6rem .75rem;text-align:left;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[
+                ['Apresentador',   MODELO.apresentador,   'Quem apresentou a solução'],
+                ['Consolidador',   MODELO.consolidador,   'Quem consolidou o contrato'],
+                ['Gestão Comercial', MODELO.gestao,       'Gestão do processo comercial'],
+                ['OPEX',           MODELO.opex,           'Custos operacionais'],
+                ['Internalizado',  MODELO.internalizado,  'Parcela internalizada Redesa'],
+                ['Equipe',         MODELO.equipe,         'Distribuição para equipe'],
+                ['Fundo Reserva',  MODELO.fundo_reserva,  'Reserva estratégica'],
+              ].map(([nome, pct, desc]) => `
+                <tr style="border-bottom:1px solid var(--line);">
+                  <td style="padding:.6rem .75rem;font-weight:600;">${nome}</td>
+                  <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;">${(pct*100).toFixed(2)}%</td>
+                  <td style="padding:.6rem .75rem;text-align:right;font-weight:600;color:var(--accent);">${fmtMoney(redesa*pct)}</td>
+                  <td style="padding:.6rem .75rem;font-size:.78rem;color:var(--ink-dim);">${desc}</td>
+                </tr>
+              `).join('')}
+              <tr style="background:var(--accent-soft);font-weight:700;border-top:2px solid var(--accent);">
+                <td style="padding:.6rem .75rem;">TOTAL</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;">${(Object.values(MODELO).reduce((a,b)=>a+b,0)*100).toFixed(2)}%</td>
+                <td style="padding:.6rem .75rem;text-align:right;color:var(--accent);">${fmtMoney(redesa*Object.values(MODELO).reduce((a,b)=>a+b,0))}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Indicadores / Responsáveis -->
+      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Responsáveis Comerciais (Indicadores)</h2>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Código</th><th>Nome</th><th>Email</th><th>Telefone</th><th class="num">% Comissão</th>
-            <th class="num">Municípios</th><th class="num">Receita potencial</th><th>Ativo</th>
+            <th>Código</th>
+            <th>Nome</th>
+            <th>Email</th>
+            <th class="num">% Apresentador</th>
+            <th class="num">Mun. Ativos</th>
+            <th class="num">Forecast (pipeline)</th>
+            <th class="num">Comissão Est.</th>
+            <th>Ativo</th>
           </tr></thead>
           <tbody>
             ${(indicadores || []).map(i => {
-              const muns = state.municipios.filter(m => m.indicacao === i.codigo);
-              const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
-              const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
-              const rev = muns.reduce((s,m) => s + (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2, 0);
-              const comissao = rev * (i.percentual_comissao || 0);
+              const { muns, rec, comissao } = calcIndicador(i);
               return `
-                <tr>
+                <tr onclick="editarIndicador('${i.id}')" style="cursor:pointer;">
                   <td><strong>${escapeHtml(i.codigo)}</strong></td>
                   <td>${escapeHtml(i.nome)}</td>
-                  <td>${escapeHtml(i.email || '—')}</td>
-                  <td>${escapeHtml(i.telefone || '—')}</td>
-                  <td class="num">${fmtPct((i.percentual_comissao || 0) * 100, 2)}</td>
+                  <td style="font-size:.78rem;color:var(--ink-dim);">${escapeHtml(i.email||'—')}</td>
+                  <td class="num">${((i.percentual_comissao||0)*100).toFixed(1)}%</td>
                   <td class="num">${muns.length}</td>
-                  <td class="num">${fmtMoney(comissao)}</td>
-                  <td>${i.ativo ? '✓' : '—'}</td>
+                  <td class="num">${fmtMoney(rec)}</td>
+                  <td class="num" style="font-weight:600;color:var(--accent);">${fmtMoney(comissao)}</td>
+                  <td>${i.ativo ? '<span style="color:var(--accent);">✓</span>' : '—'}</td>
                 </tr>
               `;
             }).join('')}
           </tbody>
         </table>
       </div>
+
     </div>
   `;
 }
 
-async function novoIndicador() {
-  const codigo = prompt('Código do indicador (ex: LCM, MNS):');
-  if (!codigo) return;
-  const nome = prompt('Nome completo:');
-  if (!nome) return;
-  const { error } = await sb.from('indicadores_externos').insert({
-    codigo: codigo.trim().toUpperCase(),
-    nome: nome.trim(),
-    percentual_comissao: 0.06,
-    ativo: true,
-  });
+async function editarIndicador(id) {
+  const { data: ind } = await sb.from('indicadores_externos').select('*').eq('id', id).single();
+  if (!ind) return;
+  const pct = prompt(`Percentual de comissão de ${ind.nome} (ex: 6 para 6%):`, ((ind.percentual_comissao||0)*100).toFixed(1));
+  if (pct === null) return;
+  const { error } = await sb.from('indicadores_externos').update({ percentual_comissao: parseFloat(pct)/100 }).eq('id', id);
   if (error) { alert('Erro: ' + error.message); return; }
   renderIndicadores();
 }
