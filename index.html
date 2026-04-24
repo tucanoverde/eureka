@@ -2249,120 +2249,133 @@ async function buscarContatosIA(munId) {
 }
 
 function renderDrawerPublico(m) {
-  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
-  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
-  const receita = (m.ef1_alunos || 0) * repasseEF1 + (m.ef2_alunos || 0) * repasseEF2;
+  const EF1 = 400, EF2 = 500;
+  const receita = (m.ef1_alunos||0)*EF1 + (m.ef2_alunos||0)*EF2;
+
+  // Helpers visuais
+  const bar = (val, max, color='var(--accent)') => {
+    const pct = max > 0 ? Math.min(val/max*100, 100) : 0;
+    return `<div style="height:6px;background:var(--line);border-radius:3px;margin-top:4px;">
+      <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>
+    </div>`;
+  };
+
+  const idhm_class = (v) => {
+    if (!v) return {label:'—', cor:'var(--ink-faint)'};
+    if (v >= 0.8) return {label:'Muito Alto', cor:'var(--accent)'};
+    if (v >= 0.7) return {label:'Alto', cor:'var(--accent-bright)'};
+    if (v >= 0.6) return {label:'Médio', cor:'var(--warn)'};
+    return {label:'Baixo', cor:'var(--danger)'};
+  };
+
+  const score_class = (v) => {
+    if (!v) return {label:'—', cor:'var(--ink-faint)'};
+    if (v >= 8) return {label:'Excelente', cor:'var(--accent)'};
+    if (v >= 7) return {label:'Bom', cor:'var(--accent-bright)'};
+    if (v >= 6) return {label:'Regular', cor:'var(--warn)'};
+    if (v >= 5) return {label:'Abaixo', cor:'#d77b2a'};
+    return {label:'Crítico', cor:'var(--danger)'};
+  };
+
+  const idhm_info = idhm_class(m.idhm);
+  const score_info = score_class(m.indicador_performance_ef);
+
+  const card = (icon, label, value, sub='', color='var(--ink)') => `
+    <div style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.85rem;display:flex;align-items:center;gap:.75rem;">
+      <div style="font-size:1.4rem;flex-shrink:0;">${icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;">${label}</div>
+        <div style="font-size:1rem;font-weight:700;color:${color};line-height:1.2;">${value}</div>
+        ${sub ? `<div style="font-size:.72rem;color:var(--ink-dim);margin-top:1px;">${sub}</div>` : ''}
+      </div>
+    </div>`;
 
   return `
-    <div class="message warn">
-      <strong>Edição manual.</strong> Os campos abaixo são dados públicos. Você pode editar diretamente quando a fonte oficial não tiver o dado ou estiver desatualizada.
-    </div>
-
-    <div class="section-title">Identificação</div>
-    <div class="form-grid">
-      <div class="field">
-        <label>Município</label>
-        <input data-field="municipio" type="text" value="${escapeHtml(m.municipio || '')}">
-      </div>
-      <div class="field">
-        <label>UF</label>
-        <input data-field="uf" type="text" maxlength="2" value="${escapeHtml(m.uf || '')}">
-      </div>
-      <div class="field">
-        <label>Código IBGE</label>
-        <input data-field="codigo_ibge" type="text" value="${escapeHtml(m.codigo_ibge || '')}">
-      </div>
-      <div class="field">
-        <label>População 2022</label>
-        <input data-field="populacao_2022" type="number" value="${m.populacao_2022 || ''}">
-      </div>
-      <div class="field">
-        <label>Região Administrativa</label>
-        <input data-field="regiao_administrativa" type="text" value="${escapeHtml(m.regiao_administrativa || '')}">
-      </div>
-      <div class="field">
-        <label>Região de Governo</label>
-        <input data-field="regiao_governo" type="text" value="${escapeHtml(m.regiao_governo || '')}">
-      </div>
-    </div>
-
-    <div class="section-title">Alunos e FUNDEB</div>
-    <div class="form-grid">
-      <div class="field">
-        <label>Alunos EF1 (Anos Iniciais)</label>
-        <input data-field="ef1_alunos" type="number" value="${m.ef1_alunos || ''}">
-      </div>
-      <div class="field">
-        <label>Alunos EF2 (Anos Finais)</label>
-        <input data-field="ef2_alunos" type="number" value="${m.ef2_alunos || ''}">
-      </div>
-      <div class="field">
-        <label>Total EF (calculado)</label>
-        <div class="readonly-value ${!m.total_ef?'empty':''}">${m.total_ef != null ? fmtNum(m.total_ef) : 'Preencha EF1 e EF2'}</div>
-      </div>
-      <div class="field">
-        <label>Receita potencial (calculado)</label>
-        <div class="readonly-value ${!receita?'empty':''}">${receita ? fmtMoney(receita) : '—'}</div>
-      </div>
-      <div class="field">
-        <label>Educação total 2024 — liquidado (R$)</label>
-        <input data-field="educacao_total_liquidado" type="number" step="0.01" value="${m.educacao_total_liquidado || ''}">
-      </div>
-      <div class="field">
-        <label>FUNDEB 2024 — distribuído (R$)</label>
-        <input data-field="fundeb_distribuido" type="number" step="0.01" value="${m.fundeb_distribuido || ''}">
-      </div>
-    </div>
-
-    <div class="section-title">Indicadores de qualidade</div>
-    <div class="form-grid">
-      <div class="field">
-        <label>IDHM</label>
-        <input data-field="idhm" type="number" step="0.001" min="0" max="1" value="${m.idhm || ''}">
-      </div>
-      <div class="field">
-        <label>IDEB EF1 (Anos Iniciais)</label>
-        <input data-field="ideb_ef1" type="number" step="0.01" value="${m.ideb_ef1 || ''}">
-      </div>
-      <div class="field">
-        <label>IDEB EF2 (Anos Finais)</label>
-        <input data-field="ideb_ef2" type="number" step="0.01" value="${m.ideb_ef2 || ''}">
-      </div>
-      <div class="field">
-        <label>IDEB EF (calculado)</label>
-        <div class="readonly-value ${m.ideb_ef==null?'empty':''}">${m.ideb_ef != null ? fmtNum(m.ideb_ef, 2) : '—'}</div>
-      </div>
-      <div class="field">
-        <label>SAEB EF1</label>
-        <input data-field="saeb_ef1" type="number" step="0.01" value="${m.saeb_ef1 || ''}">
-      </div>
-      <div class="field">
-        <label>SAEB EF2</label>
-        <input data-field="saeb_ef2" type="number" step="0.01" value="${m.saeb_ef2 || ''}">
-      </div>
-      <div class="field">
-        <label>SAEB EF (calculado)</label>
-        <div class="readonly-value ${m.saeb_ef==null?'empty':''}">${m.saeb_ef != null ? fmtNum(m.saeb_ef, 2) : '—'}</div>
-      </div>
-      <div class="field">
-        <label>Aprovação EF (%)</label>
-        <input data-field="aprovacao_ef" type="number" step="0.1" value="${m.aprovacao_ef || ''}">
-      </div>
-      <div class="field">
-        <label>Abandono EF (%)</label>
-        <input data-field="abandono_ef" type="number" step="0.1" value="${m.abandono_ef || ''}">
-      </div>
-      <div class="field">
-        <label>Evasão percebida (calculado)</label>
-        <div class="readonly-value ${m.evasao_percebida==null?'empty':''}">${m.evasao_percebida != null ? fmtNum(m.evasao_percebida, 2) : '—'}</div>
-      </div>
-      <div class="field full">
-        <label>Indicador de Performance EF (calculado)</label>
-        <div class="readonly-value ${m.indicador_performance_ef==null?'empty':''}">
-          ${m.indicador_performance_ef != null ? fmtNum(m.indicador_performance_ef, 3) + ' / 10' : 'Preencha IDEB, SAEB, Aprovação e Abandono'}
+    <!-- Header de identificação -->
+    <div style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:6px;padding:1rem;margin-bottom:1.25rem;display:flex;gap:1rem;align-items:center;">
+      <div style="flex:1;">
+        <div style="font-size:.75rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">
+          ${escapeHtml(m.codigo_ibge||'—')} · ${escapeHtml(m.regiao_administrativa||'—')}
+        </div>
+        <div style="font-size:.9rem;margin-top:.25rem;">
+          <strong>${escapeHtml(m.municipio)}</strong> — ${escapeHtml(m.uf||'')}
+          ${m.regiao_governo ? ` · ${escapeHtml(m.regiao_governo)}` : ''}
         </div>
       </div>
+      <div style="text-align:right;">
+        <div style="font-size:.7rem;color:var(--ink-dim);">População 2022</div>
+        <div style="font-size:1.1rem;font-weight:700;">${m.populacao_2022 ? fmtNum(m.populacao_2022) : '—'}</div>
+      </div>
     </div>
+
+    <!-- Score e IDHM em destaque -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem;">
+      <div style="background:var(--bg-elev);border:2px solid ${score_info.cor};border-radius:6px;padding:1rem;text-align:center;">
+        <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Score Educacional</div>
+        <div style="font-size:2rem;font-weight:700;color:${score_info.cor};font-family:Fraunces,serif;">
+          ${m.indicador_performance_ef ? fmtNum(m.indicador_performance_ef,2) : '—'}
+        </div>
+        <div style="font-size:.75rem;color:${score_info.cor};font-weight:600;">${score_info.label}</div>
+        ${m.indicador_performance_ef ? bar(m.indicador_performance_ef, 10, score_info.cor) : ''}
+      </div>
+      <div style="background:var(--bg-elev);border:2px solid ${idhm_info.cor};border-radius:6px;padding:1rem;text-align:center;">
+        <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">IDHM 2010</div>
+        <div style="font-size:2rem;font-weight:700;color:${idhm_info.cor};font-family:Fraunces,serif;">
+          ${m.idhm ? fmtNum(m.idhm,3) : '—'}
+        </div>
+        <div style="font-size:.75rem;color:${idhm_info.cor};font-weight:600;">${idhm_info.label}</div>
+        ${m.idhm ? bar(m.idhm, 1, idhm_info.cor) : ''}
+      </div>
+    </div>
+
+    <!-- Cards de indicadores -->
+    <div class="section-title" style="margin-top:0;">Educação</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
+      ${card('📚', 'Alunos EF Total', m.total_ef ? fmtNum(m.total_ef) : '—', `EF1: ${fmtNum(m.ef1_alunos||0)} · EF2: ${fmtNum(m.ef2_alunos||0)}`)}
+      ${card('💰', 'Receita Potencial', fmtMoney(receita), `EF1 × R$${EF1} + EF2 × R$${EF2}`, 'var(--accent)')}
+      ${card('📊', 'IDEB EF1 2023', m.ideb_ef1 ? fmtNum(m.ideb_ef1,1) : '—', m.ideb_ef2 ? `EF2: ${fmtNum(m.ideb_ef2,1)}` : '—')}
+      ${card('📈', 'SAEB EF1 2023', m.saeb_ef1 ? fmtNum(m.saeb_ef1,1) : '—', m.saeb_ef2 ? `EF2: ${fmtNum(m.saeb_ef2,1)}` : '—')}
+      ${card('✅', 'Aprovação EF', m.aprovacao_ef ? fmtNum(m.aprovacao_ef,1)+'%' : '—', m.abandono_ef ? `Abandono: ${fmtNum(m.abandono_ef,1)}%` : '', m.aprovacao_ef >= 95 ? 'var(--accent)' : 'var(--warn)')}
+      ${card('🏦', 'FUNDEB 2024', m.fundeb_distribuido ? fmtMoney(m.fundeb_distribuido) : '—', m.educacao_total_liquidado ? `Desp. Educ.: ${fmtMoney(m.educacao_total_liquidado)}` : '—')}
+    </div>
+
+    <div class="section-title">Econômico</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
+      ${card('💹', 'PIB per capita 2021', m.pib_per_capita ? fmtMoney(m.pib_per_capita/100) : '—', 'Fonte: IBGE SIDRA')}
+      ${card('👥', 'Densidade demográfica', m.populacao_2022 ? fmtNum(m.populacao_2022) + ' hab.' : '—', 'Censo 2022')}
+    </div>
+
+    <!-- Edição manual (colapsável) -->
+    <details style="margin-top:1rem;">
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--ink-dim);padding:.5rem 0;border-top:1px solid var(--line);list-style:none;display:flex;align-items:center;gap:.5rem;">
+        <span>✏️</span> Editar dados manualmente
+      </summary>
+      <div style="margin-top:1rem;">
+        <div class="message warn" style="font-size:.8rem;">
+          Edite apenas quando a fonte oficial estiver desatualizada.
+        </div>
+        <div class="form-grid" style="margin-top:.75rem;">
+          <div class="field"><label>Município</label><input data-field="municipio" type="text" value="${escapeHtml(m.municipio||'')}"></div>
+          <div class="field"><label>UF</label><input data-field="uf" type="text" maxlength="2" value="${escapeHtml(m.uf||'')}"></div>
+          <div class="field"><label>Código IBGE</label><input data-field="codigo_ibge" type="text" value="${escapeHtml(m.codigo_ibge||'')}"></div>
+          <div class="field"><label>População 2022</label><input data-field="populacao_2022" type="number" value="${m.populacao_2022||''}"></div>
+          <div class="field"><label>Região Administrativa</label><input data-field="regiao_administrativa" type="text" value="${escapeHtml(m.regiao_administrativa||'')}"></div>
+          <div class="field"><label>Região de Governo</label><input data-field="regiao_governo" type="text" value="${escapeHtml(m.regiao_governo||'')}"></div>
+          <div class="field"><label>Alunos EF1</label><input data-field="ef1_alunos" type="number" value="${m.ef1_alunos||''}"></div>
+          <div class="field"><label>Alunos EF2</label><input data-field="ef2_alunos" type="number" value="${m.ef2_alunos||''}"></div>
+          <div class="field"><label>IDHM</label><input data-field="idhm" type="number" step="0.001" value="${m.idhm||''}"></div>
+          <div class="field"><label>IDEB EF1</label><input data-field="ideb_ef1" type="number" step="0.01" value="${m.ideb_ef1||''}"></div>
+          <div class="field"><label>IDEB EF2</label><input data-field="ideb_ef2" type="number" step="0.01" value="${m.ideb_ef2||''}"></div>
+          <div class="field"><label>SAEB EF1</label><input data-field="saeb_ef1" type="number" step="0.01" value="${m.saeb_ef1||''}"></div>
+          <div class="field"><label>SAEB EF2</label><input data-field="saeb_ef2" type="number" step="0.01" value="${m.saeb_ef2||''}"></div>
+          <div class="field"><label>Aprovação EF (%)</label><input data-field="aprovacao_ef" type="number" step="0.1" value="${m.aprovacao_ef||''}"></div>
+          <div class="field"><label>Abandono EF (%)</label><input data-field="abandono_ef" type="number" step="0.1" value="${m.abandono_ef||''}"></div>
+          <div class="field"><label>FUNDEB distribuído</label><input data-field="fundeb_distribuido" type="number" step="0.01" value="${m.fundeb_distribuido||''}"></div>
+          <div class="field"><label>Despesa Educação</label><input data-field="educacao_total_liquidado" type="number" step="0.01" value="${m.educacao_total_liquidado||''}"></div>
+          <div class="field"><label>PIB per capita (centavos)</label><input data-field="pib_per_capita" type="number" value="${m.pib_per_capita||''}"></div>
+        </div>
+      </div>
+    </details>
   `;
 }
 
