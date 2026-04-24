@@ -2787,8 +2787,8 @@ async function renderTracking() {
   const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
   const PESOS = { SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85 };
   const ativos = state.municipios.filter(m => ETAPAS.includes(m.status));
-  const receita_atual = ativos.reduce((s,m) => s + (m.receita_potencial || (m.total_ef||0)*440), 0);
-  const forecast_atual = ativos.reduce((s,m) => s + (m.receita_potencial||(m.total_ef||0)*440) * (PESOS[m.status]||0.25), 0);
+  const receita_atual = ativos.reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500), 0);
+  const forecast_atual = ativos.reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500) * (PESOS[m.status]||0.25), 0);
 
   // Última semana do tracking
   const ultima = trk[trk.length - 1];
