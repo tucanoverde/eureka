@@ -2087,7 +2087,10 @@ function renderDrawerComercial(m) {
 
     <div class="form-grid">
       <div class="field full">
-        <label>Responsável / Indicador</label>
+        <label style="display:flex;justify-content:space-between;align-items:center;">
+          Responsável / Indicador
+          <button onclick="novoIndicadorRapido()" style="font:inherit;font-size:.72rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;">+ Novo</button>
+        </label>
         <select data-field="indicacao">
           <option value="">— Sem responsável</option>
           ${indicadoresOptions}
@@ -4268,6 +4271,40 @@ async function editarIndicador(id) {
   const { error } = await sb.from('indicadores_externos').update({ percentual_comissao: parseFloat(pct)/100 }).eq('id', id);
   if (error) { alert('Erro: ' + error.message); return; }
   renderIndicadores();
+}
+
+async function novoIndicador() {
+  const codigo = prompt('Código (ex: LCM, MNS, FE):');
+  if (!codigo) return;
+  const nome = prompt('Nome completo:');
+  if (!nome) return;
+  const pct = prompt('% comissão (ex: 6 para 6%):', '6');
+  const { error } = await sb.from('indicadores_externos').insert({
+    codigo: codigo.trim().toUpperCase(),
+    nome: nome.trim(),
+    percentual_comissao: parseFloat(pct||'6')/100,
+    ativo: true,
+  });
+  if (error) { alert('Erro: ' + error.message); return; }
+  renderIndicadores();
+}
+
+async function novoIndicadorRapido() {
+  const codigo = prompt('Código do responsável (ex: LCM, MNS, FE):');
+  if (!codigo) return;
+  const nome = prompt('Nome completo:');
+  if (!nome) return;
+  const pct = prompt('% comissão (ex: 6 para 6%):', '6');
+  const { data, error } = await sb.from('indicadores_externos').insert({
+    codigo: codigo.trim().toUpperCase(),
+    nome: nome.trim(),
+    percentual_comissao: parseFloat(pct||'6')/100,
+    ativo: true,
+  }).select().single();
+  if (error) { alert('Erro: ' + error.message); return; }
+  state.indicadores.push(data);
+  showSaveIndicator('saved', `Responsável ${data.codigo} criado!`);
+  openDrawerTab('comercial');
 }
 
 // ============================================================
