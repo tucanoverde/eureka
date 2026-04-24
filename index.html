@@ -3387,4 +3387,831 @@ function parseCSVText(text) {
     const cols = [];
     let cur = '';
     let inQuote = false;
-    for (let i = 0; i < line.length; i++
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQuote = !inQuote; continue; }
+      if (c === sep && !inQuote) { cols.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    cols.push(cur);
+    return cols.map(c => c.trim());
+  };
+  const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseRow(lines[i]);
+    const row = {};
+    headers.forEach((h, j) => { row[h] = cols[j]; });
+    rows.push(row);
+  }
+  return { headers, rows };
+}
+
+function toNumBR(v) {
+  if (v == null || v === '' || v === '--' || v === '-') return null;
+  if (typeof v === 'number') return v;
+  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function normalizeCodigoIbge(v) {
+  if (!v) return null;
+  return String(v).trim().replace(/\.0$/, '');
+}
+
+// ------------------------------------------------------------
+// PROCESSAMENTO POR FONTE
+// ------------------------------------------------------------
+async function processarArquivoFonte(file, codigoFonte) {
+  const result = document.getElementById('importResult');
+  result.innerHTML = `<div class="message">Processando <strong>${escapeHtml(file.name)}</strong> como <code class="mono">${codigoFonte}</code>...</div>`;
+
+  try {
+    let updates = [];
+    let colunasAfetadas = [];
+    let cobertura = 0;
+
+    const fonteInfo = state.fontes.find(f => f.codigo === codigoFonte);
+
+    switch (codigoFonte) {
+      case 'ibge_populacao_2022':
+        ({ updates, colunasAfetadas } = await parseIBGEPopulacao(file));
+        break;
+      case 'inep_matriculas':
+        ({ updates, colunasAfetadas } = await parseINEPMatriculas(file));
+        break;
+      case 'inep_rendimento':
+        ({ updates, colunasAfetadas } = await parseINEPRendimento(file));
+        break;
+      case 'inep_ideb':
+        ({ updates, colunasAfetadas } = await parseINEPIdeb(file));
+        break;
+      case 'inep_saeb':
+        ({ updates, colunasAfetadas } = await parseINEPSaeb(file));
+        break;
+      case 'pnud_idhm':
+        ({ updates, colunasAfetadas } = await parsePNUDIdhm(file));
+        break;
+      case 'fnde_fundeb':
+        ({ updates, colunasAfetadas } = await parseFNDEFundeb(file));
+        break;
+      case 'siconfi_educacao':
+        ({ updates, colunasAfetadas } = await parseSICONFIEducacao(file));
+        break;
+      case 'tse_prefeitos_2024':
+        ({ updates, colunasAfetadas } = await parseTSEPrefeitos(file));
+        break;
+      default:
+        throw new Error('Fonte não reconhecida: ' + codigoFonte);
+    }
+
+    if (updates.length === 0) {
+      result.innerHTML = `<div class="message error">Nenhum registro válido encontrado no arquivo. Verifique se o arquivo corresponde à fonte <strong>${escapeHtml(fonteInfo.nome)}</strong>.</div>`;
+      return;
+    }
+
+    result.innerHTML = `<div class="message">Arquivo processado. Atualizando ${updates.length} municípios no banco...</div>`;
+    cobertura = await aplicarUpdatesMunicipios(updates, colunasAfetadas);
+
+    // Atualiza metadata da fonte
+    const { error: errFonte } = await sb.from('fontes_dados').update({
+      arquivo_nome_original: file.name,
+      cobertura_municipios: cobertura,
+      ultima_atualizacao: new Date().toISOString(),
+      ultima_atualizacao_usuario: state.user.id,
+      status: cobertura > 0 ? 'ok' : 'erro',
+    }).eq('codigo', codigoFonte);
+    if (errFonte) console.warn('Erro ao atualizar metadata:', errFonte);
+
+    await carregarFontes();
+    await loadCoreData();
+    renderFontesTable();
+
+    result.innerHTML = `<div class="message success">
+      <strong>Fonte atualizada:</strong> ${escapeHtml(fonteInfo.nome)}.<br>
+      ${cobertura} municípios afetados. Colunas: <code class="mono">${colunasAfetadas.join(', ')}</code>.
+    </div>`;
+  } catch (err) {
+    console.error('Erro no processamento:', err);
+    result.innerHTML = `<div class="message error"><strong>Erro:</strong> ${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+async function aplicarUpdatesMunicipios(updates, colunasAfetadas) {
+  // Mapa codigo_ibge -> dados a atualizar
+  // Estratégia: pra cada município com codigo_ibge, update. Pra cada sem codigo, skip.
+  const byIbge = new Map();
+  for (const u of updates) {
+    const ibge = normalizeCodigoIbge(u.codigo_ibge);
+    if (!ibge) continue;
+    byIbge.set(ibge, u);
+  }
+
+  // Traz todos os ids dos municipios no banco por codigo_ibge
+  let afetados = 0;
+  const entries = Array.from(byIbge.entries());
+  for (let i = 0; i < entries.length; i += 50) {
+    const slice = entries.slice(i, i + 50);
+    const promises = slice.map(async ([ibge, u]) => {
+      const patch = {};
+      for (const c of colunasAfetadas) {
+        if (u[c] !== undefined) patch[c] = u[c];
+      }
+      patch.atualizado_por = state.user.id;
+      const { error, count } = await sb.from('municipios')
+        .update(patch, { count: 'exact' })
+        .eq('codigo_ibge', ibge);
+      if (error) { console.warn('Erro update', ibge, error); return 0; }
+      return count || 0;
+    });
+    const counts = await Promise.all(promises);
+    afetados += counts.reduce((a,b) => a+b, 0);
+  }
+
+  return afetados;
+}
+
+// ------------------------------------------------------------
+// PARSERS ESPECÍFICOS
+// ------------------------------------------------------------
+
+// IBGE População 2022 - formato SIDRA ou planilha Censo
+async function parseIBGEPopulacao(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+
+  // Tenta encontrar colunas de código IBGE e população
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+  const first = rows[0];
+  const cols = Object.keys(first).map(k => k.toLowerCase());
+
+  // Detecta colunas comuns: "cod", "código", "codigo_ibge", "municipio_codigo"
+  // População: "populacao", "pop", "habitantes", "v93", "valor"
+  const codCol = findColumn(cols, ['codigo_ibge','cod_munic','codigo_municipio','cod_mun','cod','codmun','id_municipio']);
+  const popCol = findColumn(cols, ['populacao_2022','populacao','pop','habitantes','valor','v93']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas encontradas: ' + cols.join(', '));
+  if (!popCol) throw new Error('Coluna de população não identificada. Colunas encontradas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const pop = toNumBR(getValueCI(r, popCol));
+    if (codigo && pop != null) {
+      updates.push({ codigo_ibge: codigo, populacao_2022: pop });
+    }
+  }
+  return { updates, colunasAfetadas: ['populacao_2022'] };
+}
+
+// INEP Matrículas (Censo Escolar) - ZIP com microdados ou CSV já agregado
+async function parseINEPMatriculas(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'zip') {
+    throw new Error('Microdados do Censo Escolar em ZIP não são processados no navegador por tamanho. Use a Importação CSV geral com arquivo já consolidado, ou rode o script de processamento no servidor.');
+  }
+  // Caso seja XLSX/CSV com colunas codigo_ibge, ef1_alunos, ef2_alunos
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const ef1Col = findColumn(cols, ['ef1_alunos','qt_mat_fund_ai','anos_iniciais','ef1']);
+  const ef2Col = findColumn(cols, ['ef2_alunos','qt_mat_fund_af','anos_finais','ef2']);
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada.');
+  if (!ef1Col && !ef2Col) throw new Error('Colunas de matrículas (EF1/EF2) não identificadas.');
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (ef1Col) u.ef1_alunos = toNumBR(getValueCI(r, ef1Col));
+    if (ef2Col) u.ef2_alunos = toNumBR(getValueCI(r, ef2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['ef1_alunos','ef2_alunos'] };
+}
+
+// INEP Taxas de Rendimento - XLSX oficial do INEP
+async function parseINEPRendimento(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext !== 'xlsx' && ext !== 'csv') throw new Error('Use o XLSX oficial do INEP (tx_rend_municipios_YYYY.xlsx).');
+
+  let rows;
+  if (ext === 'xlsx') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  // INEP usa linha 9 como cabeçalho técnico: NU_ANO_CENSO, NO_REGIAO, SG_UF, CO_MUNICIPIO, NO_MUNICIPIO, NO_CATEGORIA, NO_DEPENDENCIA, 1_CAT_FUN, ...
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic']);
+  const categoriaCol = findColumn(cols, ['no_categoria','categoria','localizacao']);
+  const dependenciaCol = findColumn(cols, ['no_dependencia','dependencia']);
+  const aprovCol = findColumn(cols, ['1_cat_fun','aprovacao_ef','taxa_aprovacao_ef']);
+  const abanCol = findColumn(cols, ['3_cat_fun','abandono_ef','taxa_abandono_ef']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    // Filtra: categoria=Total, dependencia=Total (ou sem filtro se não tiver essas colunas)
+    if (categoriaCol) {
+      const cat = String(getValueCI(r, categoriaCol) || '').toLowerCase();
+      if (cat && cat !== 'total') continue;
+    }
+    if (dependenciaCol) {
+      const dep = String(getValueCI(r, dependenciaCol) || '').toLowerCase();
+      if (dep && dep !== 'total') continue;
+    }
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (aprovCol) u.aprovacao_ef = toNumBR(getValueCI(r, aprovCol));
+    if (abanCol) u.abandono_ef = toNumBR(getValueCI(r, abanCol));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['aprovacao_ef','abandono_ef'] };
+}
+
+// INEP IDEB
+async function parseINEPIdeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const ideb1Col = findColumn(cols, ['ideb_ef1','ideb_ai','vl_observado_anos_iniciais','ideb_iniciais']);
+  const ideb2Col = findColumn(cols, ['ideb_ef2','ideb_af','vl_observado_anos_finais','ideb_finais']);
+  const redeCol = findColumn(cols, ['rede','nm_dependencia_adm','dependencia']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!ideb1Col && !ideb2Col) throw new Error('Colunas de IDEB não identificadas. Colunas: ' + cols.join(', '));
+
+  // Se tiver coluna rede, filtra por "Pública" ou "Total"
+  const updates = [];
+  for (const r of rows) {
+    if (redeCol) {
+      const rede = String(getValueCI(r, redeCol) || '').toLowerCase();
+      if (rede && !rede.includes('pública') && !rede.includes('publica') && rede !== 'total') continue;
+    }
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (ideb1Col) u.ideb_ef1 = toNumBR(getValueCI(r, ideb1Col));
+    if (ideb2Col) u.ideb_ef2 = toNumBR(getValueCI(r, ideb2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['ideb_ef1','ideb_ef2'] };
+}
+
+// INEP SAEB
+async function parseINEPSaeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','co_municipio','cod_munic','codigo_municipio']);
+  const saeb1Col = findColumn(cols, ['saeb_ef1','saeb_ai','media_5ef_mt','media_5ef','media_ai']);
+  const saeb2Col = findColumn(cols, ['saeb_ef2','saeb_af','media_9ef_mt','media_9ef','media_af']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!saeb1Col && !saeb2Col) throw new Error('Colunas de SAEB não identificadas. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    if (!codigo) continue;
+    const u = { codigo_ibge: codigo };
+    if (saeb1Col) u.saeb_ef1 = toNumBR(getValueCI(r, saeb1Col));
+    if (saeb2Col) u.saeb_ef2 = toNumBR(getValueCI(r, saeb2Col));
+    updates.push(u);
+  }
+  return { updates, colunasAfetadas: ['saeb_ef1','saeb_ef2'] };
+}
+
+// Atlas Brasil IDHM
+async function parsePNUDIdhm(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','codmun7','cod_mun','codigo_municipio','id_municipio','codmun']);
+  const idhmCol = findColumn(cols, ['idhm','idhm_2010','idhm_m','valor']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!idhmCol) throw new Error('Coluna de IDHM não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const idhm = toNumBR(getValueCI(r, idhmCol));
+    if (codigo && idhm != null) updates.push({ codigo_ibge: codigo, idhm });
+  }
+  return { updates, colunasAfetadas: ['idhm'] };
+}
+
+// FNDE FUNDEB
+async function parseFNDEFundeb(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','cod_mun','codigo_municipio','id_municipio','codmun']);
+  const valCol = findColumn(cols, ['fundeb_distribuido','valor_distribuido','vl_distribuido','fundeb','valor','total']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!valCol) throw new Error('Coluna de valor do FUNDEB não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const val = toNumBR(getValueCI(r, valCol));
+    if (codigo && val != null) updates.push({ codigo_ibge: codigo, fundeb_distribuido: val });
+  }
+  return { updates, colunasAfetadas: ['fundeb_distribuido'] };
+}
+
+// SICONFI Despesa em Educação
+async function parseSICONFIEducacao(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file, { headerRowDetect: true });
+  } else {
+    const text = await file.text();
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const codCol = findColumn(cols, ['codigo_ibge','cod_ibge','cod_mun','codigo_municipio','id_municipio']);
+  const valCol = findColumn(cols, ['educacao_total_liquidado','despesa_liquidada','liquidado','valor','total']);
+
+  if (!codCol) throw new Error('Coluna de código IBGE não identificada. Colunas: ' + cols.join(', '));
+  if (!valCol) throw new Error('Coluna de valor da despesa não identificada. Colunas: ' + cols.join(', '));
+
+  const updates = [];
+  for (const r of rows) {
+    const codigo = normalizeCodigoIbge(getValueCI(r, codCol));
+    const val = toNumBR(getValueCI(r, valCol));
+    if (codigo && val != null) updates.push({ codigo_ibge: codigo, educacao_total_liquidado: val });
+  }
+  return { updates, colunasAfetadas: ['educacao_total_liquidado'] };
+}
+
+// TSE Prefeitos eleitos 2024
+async function parseTSEPrefeitos(file) {
+  // Arquivo: consulta_cand_2024_BRASIL.csv (separador ;, encoding latin-1)
+  // Colunas relevantes: DS_CARGO, DS_SIT_TOT_TURNO, NM_CANDIDATO, SG_UF, NM_UE, DS_GENERO
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await parseXLSX(file);
+  } else {
+    // CSV do TSE é windows-1252 (latin-1)
+    const buf = await file.arrayBuffer();
+    const decoder = new TextDecoder('windows-1252');
+    const text = decoder.decode(buf);
+    rows = parseCSVText(text).rows;
+  }
+  if (rows.length === 0) throw new Error('Arquivo vazio');
+
+  const cols = Object.keys(rows[0]).map(k => k.toLowerCase());
+  const cargoCol = findColumn(cols, ['ds_cargo','cargo']);
+  const sitCol = findColumn(cols, ['ds_sit_tot_turno','situacao','ds_situacao_candidato_turno']);
+  const nomeCol = findColumn(cols, ['nm_candidato','nome_candidato','nm_urna_candidato','nome']);
+  const ufCol = findColumn(cols, ['sg_uf','uf']);
+  const munCol = findColumn(cols, ['nm_ue','nome_municipio','nm_municipio','municipio']);
+  const generoCol = findColumn(cols, ['ds_genero','genero']);
+
+  if (!nomeCol) throw new Error('Coluna de nome do candidato não encontrada. Colunas: ' + cols.join(', '));
+  if (!munCol) throw new Error('Coluna de município não encontrada. Colunas: ' + cols.join(', '));
+
+  // Monta índice nome_municipio+uf → id do município no state
+  // Normaliza pra comparação
+  const norm = s => String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const munIndex = new Map();
+  for (const m of state.municipios) {
+    const key = norm(m.municipio) + '|' + (m.uf || '').toLowerCase();
+    munIndex.set(key, m.codigo_ibge);
+  }
+
+  const updates = [];
+  let semMatch = 0;
+
+  for (const r of rows) {
+    // Filtra só prefeitos eleitos
+    if (cargoCol) {
+      const cargo = norm(getValueCI(r, cargoCol));
+      if (!cargo.includes('prefeito')) continue;
+    }
+    if (sitCol) {
+      const sit = norm(getValueCI(r, sitCol));
+      if (!sit.includes('eleito')) continue;
+    }
+
+    const nome = String(getValueCI(r, nomeCol) || '').trim();
+    const uf = String(getValueCI(r, ufCol) || '').trim().toUpperCase();
+    const mun = String(getValueCI(r, munCol) || '').trim();
+    const genero = String(getValueCI(r, generoCol) || '').trim().toLowerCase();
+
+    if (!nome || !mun) continue;
+
+    // Busca o código IBGE pelo nome do município + UF
+    const key = norm(mun) + '|' + uf.toLowerCase();
+    const codigoIbge = munIndex.get(key);
+
+    if (!codigoIbge) {
+      semMatch++;
+      continue;
+    }
+
+    // Formata nome: capitaliza cada palavra
+    const nomeFormatado = nome.split(' ')
+      .map(p => p.length <= 2 ? p.toLowerCase() : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+      .join(' ');
+
+    updates.push({
+      codigo_ibge: String(codigoIbge),
+      prefeito: nomeFormatado,
+    });
+  }
+
+  if (semMatch > 0) console.warn(`TSE: ${semMatch} municípios sem match por nome`);
+
+  return { updates, colunasAfetadas: ['prefeito'] };
+}
+
+// ------------------------------------------------------------
+// UTILITÁRIOS
+// ------------------------------------------------------------
+function findColumn(cols, candidates) {
+  for (const cand of candidates) {
+    const found = cols.find(c => c === cand);
+    if (found) return found;
+  }
+  // partial match
+  for (const cand of candidates) {
+    const found = cols.find(c => c.includes(cand));
+    if (found) return found;
+  }
+  return null;
+}
+
+function getValueCI(row, col) {
+  // Busca valor case-insensitive
+  const keys = Object.keys(row);
+  const lower = col.toLowerCase();
+  const key = keys.find(k => k.toLowerCase() === lower);
+  return key ? row[key] : undefined;
+}
+
+async function parseXLSX(file, opts = {}) {
+  // Usa SheetJS dinamicamente
+  if (!window.XLSX) {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  }
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+
+  // Converte pra array de arrays primeiro pra detectar linha de cabeçalho
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  if (aoa.length === 0) return [];
+
+  let headerRow = 0;
+  if (opts.headerRowDetect) {
+    // Detecta primeira linha com >= 4 colunas preenchidas e que contenha palavras técnicas
+    for (let i = 0; i < Math.min(aoa.length, 20); i++) {
+      const row = aoa[i];
+      const filled = row.filter(c => c !== '' && c != null).length;
+      const txt = row.join(' ').toLowerCase();
+      if (filled >= 4 && (
+        /co_munic|cod.?_?ibge|codmun|municipio/i.test(txt) &&
+        !/ministério|instituto|taxas de rendimento|tabela|total/i.test(txt.substring(0, 100))
+      )) {
+        headerRow = i;
+        break;
+      }
+    }
+  }
+
+  const headers = aoa[headerRow].map(h => String(h || '').trim());
+  const rows = [];
+  for (let i = headerRow + 1; i < aoa.length; i++) {
+    const row = {};
+    headers.forEach((h, j) => { row[h] = aoa[i][j]; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// ------------------------------------------------------------
+// UPLOAD CSV GENÉRICO (como antes)
+// ------------------------------------------------------------
+async function processarCSVGenerico(file) {
+  const result = document.getElementById('importResult');
+  result.innerHTML = '<div class="message">Processando arquivo...</div>';
+
+  const text = await file.text();
+  const { headers, rows } = parseCSVText(text);
+  if (rows.length === 0) {
+    result.innerHTML = '<div class="message error">CSV vazio ou sem dados.</div>';
+    return;
+  }
+
+  const numFields = ['populacao_2022','ef1_alunos','ef2_alunos','educacao_total_liquidado','fundeb_distribuido',
+                     'idhm','ideb_ef1','ideb_ef2','saeb_ef1','saeb_ef2','aprovacao_ef','abandono_ef'];
+
+  const registros = [];
+  const erros = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const row = {};
+    for (const [h, v] of Object.entries(r)) {
+      if (v === '' || v == null) { row[h] = null; continue; }
+      if (numFields.includes(h)) {
+        row[h] = toNumBR(v);
+      } else {
+        row[h] = String(v).trim();
+      }
+    }
+    if (!row.municipio) { erros.push(`Linha ${i+2}: sem município`); continue; }
+    if (!row.uf) row.uf = 'SP';
+    row.uf = row.uf.toUpperCase().slice(0, 2);
+    row.criado_por = state.user.id;
+    row.atualizado_por = state.user.id;
+    registros.push(row);
+  }
+
+  if (registros.length === 0) {
+    result.innerHTML = `<div class="message error">Nenhum registro válido. Erros:<br>${erros.join('<br>')}</div>`;
+    return;
+  }
+
+  result.innerHTML = `<div class="message">Importando ${registros.length} registros...</div>`;
+
+  let inseridos = 0;
+  let falhas = 0;
+  for (let i = 0; i < registros.length; i += 100) {
+    const batch = registros.slice(i, i + 100);
+    const { error } = await sb.from('municipios').insert(batch);
+    if (error) {
+      falhas += batch.length;
+      console.error('Erro no lote:', error);
+    } else {
+      inseridos += batch.length;
+    }
+  }
+
+  await loadCoreData();
+
+  result.innerHTML = `<div class="message ${falhas ? 'warn' : 'success'}">
+    <strong>Importação concluída.</strong> ${inseridos} registros inseridos, ${falhas} falhas.
+    ${erros.length ? `<br><br>Avisos: <br>${erros.slice(0, 10).join('<br>')}${erros.length > 10 ? `<br>... e mais ${erros.length - 10}` : ''}` : ''}
+  </div>`;
+}
+
+// ============================================================
+// INDICADORES
+// ============================================================
+async function renderIndicadores() {
+  const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Parceiros · Quem traz os leads</div>
+        <h1><em>Indicadores</em></h1>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="novoIndicador()">+ Novo indicador</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Código</th><th>Nome</th><th>Email</th><th>Telefone</th><th class="num">% Comissão</th>
+            <th class="num">Municípios</th><th class="num">Receita potencial</th><th>Ativo</th>
+          </tr></thead>
+          <tbody>
+            ${(indicadores || []).map(i => {
+              const muns = state.municipios.filter(m => m.indicacao === i.codigo);
+              const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
+              const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+              const rev = muns.reduce((s,m) => s + (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2, 0);
+              const comissao = rev * (i.percentual_comissao || 0);
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(i.codigo)}</strong></td>
+                  <td>${escapeHtml(i.nome)}</td>
+                  <td>${escapeHtml(i.email || '—')}</td>
+                  <td>${escapeHtml(i.telefone || '—')}</td>
+                  <td class="num">${fmtPct((i.percentual_comissao || 0) * 100, 2)}</td>
+                  <td class="num">${muns.length}</td>
+                  <td class="num">${fmtMoney(comissao)}</td>
+                  <td>${i.ativo ? '✓' : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function novoIndicador() {
+  const codigo = prompt('Código do indicador (ex: LCM, MNS):');
+  if (!codigo) return;
+  const nome = prompt('Nome completo:');
+  if (!nome) return;
+  const { error } = await sb.from('indicadores_externos').insert({
+    codigo: codigo.trim().toUpperCase(),
+    nome: nome.trim(),
+    percentual_comissao: 0.06,
+    ativo: true,
+  });
+  if (error) { alert('Erro: ' + error.message); return; }
+  renderIndicadores();
+}
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
+function renderConfiguracoes() {
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Sistema</div>
+        <h1><em>Configurações</em></h1>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="message">
+        <strong>Seu perfil:</strong> ${escapeHtml(state.perfil?.nome || '')} ·
+        Papel atual: <code class="mono">${escapeHtml(state.perfil?.papel || 'sem papel')}</code>
+        ${state.perfil?.papel !== 'admin' ? `
+          <br><br>Para se promover a admin, vá no SQL Editor do Supabase e execute:
+          <br><code class="mono" style="display: block; padding: 0.5rem; background: var(--bg); margin-top: 0.5rem;">update public.perfis set papel = 'admin' where email = '${escapeHtml(state.user.email)}';</code>
+        ` : ''}
+      </div>
+
+      <div class="section-title">Valores de repasse por aluno</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Repasse EF1 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1 || 400}">
+        </div>
+        <div class="field">
+          <label>Repasse EF2 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2 || 500}">
+        </div>
+        <div class="field">
+          <label>% Redesa</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa || 0.5}">
+        </div>
+      </div>
+
+      <div class="section-title">Cenários de conversão</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Agressivo</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.agressivo" value="${(state.configuracoes.cenarios_conversao||{}).agressivo || 1}">
+        </div>
+        <div class="field">
+          <label>Realista</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.realista" value="${(state.configuracoes.cenarios_conversao||{}).realista || 0.5}">
+        </div>
+        <div class="field">
+          <label>Conservador</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.conservador" value="${(state.configuracoes.cenarios_conversao||{}).conservador || 0.25}">
+        </div>
+      </div>
+
+      <div class="section-title">Pesos do indicador de performance</div>
+      <div class="message warn">
+        Alterar estes pesos não recalcula automaticamente os scores já salvos. Após mudar, reimporte os dados ou edite os municípios para recalcular.
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Peso IDEB</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.ideb" value="${(state.configuracoes.pesos_score||{}).ideb || 0.35}">
+        </div>
+        <div class="field">
+          <label>Peso SAEB</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.saeb" value="${(state.configuracoes.pesos_score||{}).saeb || 0.35}">
+        </div>
+        <div class="field">
+          <label>Peso Evasão</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.evasao" value="${(state.configuracoes.pesos_score||{}).evasao || 0.30}">
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem;">
+        <button class="btn primary" onclick="salvarConfiguracoes()">Salvar configurações</button>
+      </div>
+    </div>
+  `;
+}
+
+async function salvarConfiguracoes() {
+  const simples = document.querySelectorAll('[data-cfg]');
+  const nested = document.querySelectorAll('[data-cfg-nested]');
+
+  const updates = [];
+
+  simples.forEach(el => {
+    updates.push({
+      chave: el.dataset.cfg,
+      valor: parseFloat(el.value),
+      atualizado_por: state.user.id,
+    });
+  });
+
+  // Agrupa nested
+  const grupos = {};
+  nested.forEach(el => {
+    const [grupo, sub] = el.dataset.cfgNested.split('.');
+    grupos[grupo] = grupos[grupo] || {};
+    grupos[grupo][sub] = parseFloat(el.value);
+  });
+  Object.entries(grupos).forEach(([chave, valor]) => {
+    updates.push({ chave, valor, atualizado_por: state.user.id });
+  });
+
+  for (const u of updates) {
+    await sb.from('configuracoes').upsert(u);
+  }
+
+  await loadCoreData();
+  alert('Configurações salvas.');
+  renderConfiguracoes();
+}
+
+// ============================================================
+// START
+// ============================================================
+initApp();
+</script>
+</body>
+</html>
