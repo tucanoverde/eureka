@@ -1292,16 +1292,8 @@ function renderDashboard() {
         <!-- MAPA -->
         <div style="background:var(--bg-elev); border:1px solid var(--line); border-radius:4px; padding:1.25rem;">
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:.5rem;">
-            <h2 style="font-size:1rem; font-weight:600;">Mapa do Brasil</h2>
+            <h2 style="font-size:1rem; font-weight:600;">Mapa do Brasil <span style="font-size:.75rem; font-weight:400; color:var(--ink-dim);">· colorido por Score</span></h2>
             <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
-              <select id="mapaDimensao" style="font:inherit; font-size:.8rem; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:4px 10px; color:var(--ink)">
-                <option value="receita">Receita potencial</option>
-                <option value="alunos">Alunos EF</option>
-                <option value="score">Score médio</option>
-                <option value="pipeline">Municípios no pipeline</option>
-                <option value="ganhos">Ganhos</option>
-                <option value="farol_q">Farol Quente</option>
-              </select>
               <select id="mapaUF" style="font:inherit; font-size:.8rem; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:4px 10px; color:var(--ink)">
                 <option value="">Todos os estados</option>
                 ${Object.keys(ufData).sort().map(uf => `<option value="${uf}">${uf}</option>`).join('')}
@@ -1415,16 +1407,8 @@ function renderDashboard() {
   renderMapaBrasil(ufData);
 
   // Listener do seletor de dimensão
-  document.getElementById('mapaDimensao').addEventListener('change', () => renderMapaBrasil(ufData));
-  document.getElementById('mapaUF').addEventListener('change', (e) => {
-    const uf = e.target.value;
-    if (uf) {
-      // Filtra municípios daquela UF e abre lista filtrada
-      state.filters.uf = uf;
-      navigate('municipios');
-    } else {
-      renderMapaBrasil(ufData);
-    }
+  document.getElementById('mapaUF').addEventListener('change', () => {
+    renderMapaBrasil(ufData);
   });
 }
 
@@ -1439,10 +1423,9 @@ async function renderMapaBrasil(ufData) {
   const legenda = document.getElementById('mapaLegenda');
   if (!container) return;
 
-  const dimensao = document.getElementById('mapaDimensao')?.value || 'score';
   const filtroUF = document.getElementById('mapaUF')?.value || '';
 
-  // Função de cor por score do município
+  // Cor por score
   function scoreColor(score) {
     if (score == null) return '#c8c0b0';
     if (score >= 8.0) return '#1a7a3c';
@@ -1450,19 +1433,22 @@ async function renderMapaBrasil(ufData) {
     if (score >= 6.0) return '#4aaa72';
     if (score >= 5.0) return '#7dc49a';
     if (score >= 4.0) return '#b8dfc8';
-    return '#ddd8cc';
+    return '#e0d8cc';
   }
 
-  // Inicializar mapa Leaflet
+  // Inicializar mapa Leaflet com Canvas renderer (muito mais rápido)
   if (!_leafletMap) {
+    const renderer = L.canvas({ padding: 0.5 });
     _leafletMap = L.map(container, {
       center: [-15, -55],
       zoom: 4,
       zoomControl: true,
-      attributionControl: true
+      attributionControl: true,
+      preferCanvas: true,
+      renderer: renderer
     });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© OpenStreetMap',
       maxZoom: 18
     }).addTo(_leafletMap);
     _leafletMarkers = L.layerGroup().addTo(_leafletMap);
@@ -1471,59 +1457,47 @@ async function renderMapaBrasil(ufData) {
   }
 
   // Filtrar municípios com coordenadas
-  let municipios = state.municipios.filter(m => m.latitude && m.longitude);
-  if (filtroUF) municipios = municipios.filter(m => m.uf === filtroUF);
+  const todos = state.municipios.filter(m => m.latitude && m.longitude);
+  const municipios = filtroUF ? todos.filter(m => m.uf === filtroUF) : todos;
 
-  // Adicionar marcadores
+  // Marcadores via Canvas (círculos leves)
   municipios.forEach(m => {
     const score = m.indicador_performance_ef;
     const color = scoreColor(score);
-    const farol = m.farol || '';
-
-    const icon = L.divIcon({
-      className: '',
-      html: `<div style="
-        width:10px; height:10px;
-        border-radius:50%;
-        background:${color};
-        border:1.5px solid rgba(0,0,0,0.2);
-        box-shadow:0 1px 3px rgba(0,0,0,0.3);
-        cursor:pointer;
-      "></div>`,
-      iconSize: [10, 10],
-      iconAnchor: [5, 5]
-    });
-
-    const marker = L.marker([m.latitude, m.longitude], { icon })
-      .bindTooltip(`
-        <strong>${m.municipio}</strong> — ${m.uf}<br>
-        Score: ${score ? score.toFixed(2) : '—'}<br>
-        IDEB: ${m.ideb_ef1 ? m.ideb_ef1.toFixed(1) : '—'} &nbsp;|&nbsp; IDHM: ${m.idhm ? m.idhm.toFixed(3) : '—'}<br>
-        Prefeito: ${m.prefeito || '—'}<br>
-        Farol: ${farol || '—'}
-      `, { sticky: true, opacity: 0.95 })
-      .on('click', () => openDrawer(m.id));
-
-    _leafletMarkers.addLayer(marker);
+    const circle = L.circleMarker([m.latitude, m.longitude], {
+      radius: filtroUF ? 5 : 3,
+      fillColor: color,
+      color: 'rgba(0,0,0,0.15)',
+      weight: 0.5,
+      fillOpacity: 0.85
+    })
+    .bindTooltip(
+      `<strong>${m.municipio}</strong> — ${m.uf}<br>` +
+      `Score: ${score ? score.toFixed(2) : '—'}<br>` +
+      `IDEB: ${m.ideb_ef1 ? m.ideb_ef1.toFixed(1) : '—'} &nbsp;|&nbsp; IDHM: ${m.idhm ? m.idhm.toFixed(3) : '—'}<br>` +
+      `Prefeito: ${m.prefeito || '—'}`,
+      { sticky: true, opacity: 0.95 }
+    )
+    .on('click', () => openDrawer(m.id));
+    _leafletMarkers.addLayer(circle);
   });
 
-  // Ajustar zoom para UF filtrada
+  // Zoom: se UF selecionada, fit nos municípios desse estado
   if (filtroUF && municipios.length > 0) {
-    const bounds = municipios
-      .filter(m => m.latitude && m.longitude)
-      .map(m => [m.latitude, m.longitude]);
-    if (bounds.length > 0) _leafletMap.fitBounds(bounds, { padding: [30, 30] });
-  } else {
+    const bounds = L.latLngBounds(municipios.map(m => [m.latitude, m.longitude]));
+    _leafletMap.fitBounds(bounds, { padding: [40, 40] });
+  } else if (!filtroUF) {
     _leafletMap.setView([-15, -55], 4);
   }
 
   // Legenda
   if (legenda) {
     legenda.innerHTML = `
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#1a7a3c;display:inline-block;"></span> Score ≥ 8</span>
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#4aaa72;display:inline-block;"></span> 6–8</span>
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#b8dfc8;display:inline-block;"></span> 4–6</span>
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#c8c0b0;display:inline-block;"></span> Sem score</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#1a7a3c;display:inline-block;"></span> ≥ 8.0</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#2d8456;display:inline-block;"></span> 7–8</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#4aaa72;display:inline-block;"></span> 6–7</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#7dc49a;display:inline-block;"></span> 5–6</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#e0d8cc;display:inline-block;"></span> &lt; 5</span>
       <span style="margin-left:auto;color:var(--ink-faint)">${municipios.length.toLocaleString('pt-BR')} municípios · Clique para abrir ficha</span>
     `;
   }
