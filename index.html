@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root {
   --bg: #f7f5f0;
@@ -1166,6 +1168,12 @@ async function loadCoreData() {
 }
 
 function navigate(page) {
+  // Se sair do dashboard, destruir mapa para recriar corretamente
+  if (state.currentPage === 'dashboard' && page !== 'dashboard' && _leafletMap) {
+    _leafletMap.remove();
+    _leafletMap = null;
+    _leafletMarkers = null;
+  }
   state.currentPage = page;
   document.querySelectorAll('.nav-item').forEach(b => {
     b.classList.toggle('active', b.dataset.page === page);
@@ -1300,8 +1308,7 @@ function renderDashboard() {
               </select>
             </div>
           </div>
-          <div id="mapaContainer" style="width:100%; min-height:400px; position:relative;"></div>
-          <div id="mapaTooltip" style="position:fixed; background:var(--ink); color:#fff; padding:8px 12px; border-radius:4px; font-size:.8rem; pointer-events:none; display:none; z-index:9999; max-width:200px; line-height:1.5;"></div>
+          <div id="mapaContainer" style="width:100%; height:480px; position:relative; border-radius:4px; overflow:hidden;"></div>
           <div id="mapaLegenda" style="margin-top:.75rem; display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:var(--ink-dim);"></div>
         </div>
 
@@ -1422,72 +1429,108 @@ function renderDashboard() {
 }
 
 // ============================================================
-// MAPA DO BRASIL
+// MAPA DO BRASIL — Leaflet + marcadores por município
 // ============================================================
+let _leafletMap = null;
+let _leafletMarkers = null;
+
 async function renderMapaBrasil(ufData) {
   const container = document.getElementById('mapaContainer');
-  const tooltip = document.getElementById('mapaTooltip');
   const legenda = document.getElementById('mapaLegenda');
   if (!container) return;
 
-  const dimensao = document.getElementById('mapaDimensao')?.value || 'receita';
+  const dimensao = document.getElementById('mapaDimensao')?.value || 'score';
+  const filtroUF = document.getElementById('mapaUF')?.value || '';
 
-  const getVal = (uf) => {
-    const d = ufData[uf];
-    if (!d) return 0;
-    switch (dimensao) {
-      case 'receita':  return d.receita;
-      case 'alunos':   return d.alunos;
-      case 'score':    return d.score_medio;
-      case 'pipeline': return d.pipeline;
-      case 'ganhos':   return d.ganhos;
-      case 'farol_q':  return d.farois?.Q || 0;
-      default:         return d.receita;
-    }
-  };
+  // Função de cor por score do município
+  function scoreColor(score) {
+    if (score == null) return '#c8c0b0';
+    if (score >= 8.0) return '#1a7a3c';
+    if (score >= 7.0) return '#2d8456';
+    if (score >= 6.0) return '#4aaa72';
+    if (score >= 5.0) return '#7dc49a';
+    if (score >= 4.0) return '#b8dfc8';
+    return '#ddd8cc';
+  }
 
-  const getLabel = (uf) => {
-    const d = ufData[uf];
-    if (!d) return `${uf}: sem dados`;
-    const val = getVal(uf);
-    const fmt = { receita: fmtMoney(val), alunos: fmtNum(val)+' alunos',
-      score: fmtNum(val,1)+' score', pipeline: val+' municípios',
-      ganhos: val+' ganhos', farol_q: val+' Quentes' };
-    return `${uf} · ${d.count} municípios
-${fmt[dimensao]||fmtMoney(val)}`;
-  };
+  // Inicializar mapa Leaflet
+  if (!_leafletMap) {
+    _leafletMap = L.map(container, {
+      center: [-15, -55],
+      zoom: 4,
+      zoomControl: true,
+      attributionControl: true
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(_leafletMap);
+    _leafletMarkers = L.layerGroup().addTo(_leafletMap);
+  } else {
+    _leafletMarkers.clearLayers();
+  }
 
-  const vals = Object.keys(ufData).map(uf => getVal(uf));
-  const maxVal = Math.max(...vals, 1);
-  const getColor = (uf) => {
-    const d = ufData[uf];
-    if (!d) return '#ddd8cc';
-    const t = Math.pow(getVal(uf) / maxVal, 0.5);
-    return `rgb(${Math.round(232-t*222)},${Math.round(240-t*160)},${Math.round(234-t*194)})`;
-  };
+  // Filtrar municípios com coordenadas
+  let municipios = state.municipios.filter(m => m.latitude && m.longitude);
+  if (filtroUF) municipios = municipios.filter(m => m.uf === filtroUF);
 
-  // Tenta carregar D3 para mapa de polígonos reais
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:var(--ink-dim);font-size:.85rem;">Carregando mapa...</div>';
+  // Adicionar marcadores
+  municipios.forEach(m => {
+    const score = m.indicador_performance_ef;
+    const color = scoreColor(score);
+    const farol = m.farol || '';
 
-  try {
-    if (!window.d3) {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-    renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal);
-  } catch(e) {
-    // D3 não carregou (offline) — usa mapa esquemático
-    renderMapaEsquematico(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:10px; height:10px;
+        border-radius:50%;
+        background:${color};
+        border:1.5px solid rgba(0,0,0,0.2);
+        box-shadow:0 1px 3px rgba(0,0,0,0.3);
+        cursor:pointer;
+      "></div>`,
+      iconSize: [10, 10],
+      iconAnchor: [5, 5]
+    });
+
+    const marker = L.marker([m.latitude, m.longitude], { icon })
+      .bindTooltip(`
+        <strong>${m.municipio}</strong> — ${m.uf}<br>
+        Score: ${score ? score.toFixed(2) : '—'}<br>
+        IDEB: ${m.ideb_ef1 ? m.ideb_ef1.toFixed(1) : '—'} &nbsp;|&nbsp; IDHM: ${m.idhm ? m.idhm.toFixed(3) : '—'}<br>
+        Prefeito: ${m.prefeito || '—'}<br>
+        Farol: ${farol || '—'}
+      `, { sticky: true, opacity: 0.95 })
+      .on('click', () => openDrawer(m.id));
+
+    _leafletMarkers.addLayer(marker);
+  });
+
+  // Ajustar zoom para UF filtrada
+  if (filtroUF && municipios.length > 0) {
+    const bounds = municipios
+      .filter(m => m.latitude && m.longitude)
+      .map(m => [m.latitude, m.longitude]);
+    if (bounds.length > 0) _leafletMap.fitBounds(bounds, { padding: [30, 30] });
+  } else {
+    _leafletMap.setView([-15, -55], 4);
+  }
+
+  // Legenda
+  if (legenda) {
+    legenda.innerHTML = `
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#1a7a3c;display:inline-block;"></span> Score ≥ 8</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#4aaa72;display:inline-block;"></span> 6–8</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#b8dfc8;display:inline-block;"></span> 4–6</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#c8c0b0;display:inline-block;"></span> Sem score</span>
+      <span style="margin-left:auto;color:var(--ink-faint)">${municipios.length.toLocaleString('pt-BR')} municípios · Clique para abrir ficha</span>
+    `;
   }
 }
 
-function renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal) {
-  // GeoJSON embutido dos 27 estados brasileiros
+// renderMapaPoligonos e renderMapaEsquematico removidos — substituídos por Leaflet
+function _removido_renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal) {
   const GEO = {"type":"FeatureCollection","features":[
     {"type":"Feature","properties":{"uf":"AC"},"geometry":{"type":"Polygon","coordinates":[[[-73.99,-7.33],[-73.21,-9.52],[-70.52,-11.06],[-67.81,-11.03],[-67.17,-10.29],[-68.65,-9.21],[-70.19,-9.76],[-73.99,-7.33]]]}},
     {"type":"Feature","properties":{"uf":"AL"},"geometry":{"type":"Polygon","coordinates":[[[-36.34,-8.81],[-37.25,-9.35],[-37.38,-10.35],[-36.49,-10.49],[-35.64,-9.47],[-35.15,-8.81],[-36.34,-8.81]]]}},
@@ -1593,55 +1636,6 @@ function renderMapaPoligonos(container, tooltip, legenda, ufData, getVal, getLab
     <span style="margin-left:1rem;color:var(--ink-faint)">Clique no estado para filtrar municípios</span>`;
 }
 
-function renderMapaEsquematico(container, tooltip, legenda, ufData, getVal, getLabel, getColor, maxVal) {
-  const estadoPos = {
-    AC:{x:18,y:300,w:74,h:54}, AL:{x:648,y:272,w:40,h:38}, AM:{x:70,y:148,w:165,h:135},
-    AP:{x:360,y:55,w:68,h:58}, BA:{x:512,y:355,w:126,h:115}, CE:{x:558,y:192,w:64,h:63},
-    DF:{x:444,y:444,w:28,h:24}, ES:{x:554,y:500,w:44,h:56}, GO:{x:338,y:398,w:100,h:92},
-    MA:{x:462,y:192,w:82,h:78}, MG:{x:402,y:500,w:148,h:115}, MS:{x:232,y:492,w:104,h:88},
-    MT:{x:186,y:300,w:136,h:122}, PA:{x:290,y:148,w:160,h:130}, PB:{x:622,y:236,w:52,h:35},
-    PE:{x:562,y:272,w:82,h:40}, PI:{x:462,y:272,w:68,h:82}, PR:{x:306,y:712,w:116,h:70},
-    RJ:{x:468,y:618,w:80,h:54}, RN:{x:626,y:192,w:54,h:40}, RO:{x:96,y:300,w:86,h:60},
-    RR:{x:196,y:35,w:85,h:62}, RS:{x:284,y:836,w:128,h:90}, SC:{x:328,y:782,w:100,h:54},
-    SE:{x:648,y:314,w:40,h:36}, SP:{x:330,y:618,w:134,h:90}, TO:{x:328,y:280,w:82,h:108},
-  };
-  let svg = '';
-  for (const [uf, p] of Object.entries(estadoPos)) {
-    const cor = getColor(uf);
-    const d = ufData[uf];
-    const t = d ? Math.pow(getVal(uf)/maxVal,0.5) : 0;
-    const tc = t>0.4?'#fff':'#0e1a14';
-    const fs = p.w<50?8:p.w<70?9:10;
-    svg += `<g class="uf-grupo" data-uf="${uf}" style="cursor:pointer">
-      <rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${cor}" stroke="#fff" stroke-width="1.5" rx="3"/>
-      <text x="${p.x+p.w/2}" y="${p.y+p.h/2-4}" text-anchor="middle" fill="${tc}"
-        font-size="${fs}" font-weight="700" font-family="Instrument Sans,sans-serif" pointer-events="none">${uf}</text>
-      ${d&&p.h>=45?`<text x="${p.x+p.w/2}" y="${p.y+p.h/2+8}" text-anchor="middle" fill="${tc}" opacity=".8"
-        font-size="7.5" font-family="Instrument Sans,sans-serif" pointer-events="none">${d.count}</text>`:''}
-    </g>`;
-  }
-  container.innerHTML = `<svg viewBox="10 27 686 907" width="100%" style="display:block;max-height:500px;">${svg}</svg>`;
-  container.querySelectorAll('.uf-grupo').forEach(g => {
-    const uf = g.dataset.uf;
-    g.addEventListener('mouseenter', () => {
-      tooltip.style.display='block'; tooltip.innerText=getLabel(uf);
-      g.querySelector('rect').setAttribute('stroke','#1e5f3c');
-      g.querySelector('rect').setAttribute('stroke-width','2.5');
-    });
-    g.addEventListener('mousemove', e => {
-      tooltip.style.left=(e.clientX+16)+'px'; tooltip.style.top=(e.clientY-8)+'px';
-    });
-    g.addEventListener('mouseleave', () => {
-      tooltip.style.display='none';
-      g.querySelector('rect').setAttribute('stroke','#fff');
-      g.querySelector('rect').setAttribute('stroke-width','1.5');
-    });
-    g.addEventListener('click', () => { state.filters.uf=uf; navigate('municipios'); });
-  });
-  legenda.innerHTML = `<span>Menor</span>
-    <div style="width:120px;height:10px;border-radius:5px;background:linear-gradient(to right,rgb(232,240,234),rgb(10,80,40));"></div>
-    <span>Maior</span><span style="margin-left:1rem;color:var(--ink-faint)">Clique no estado para filtrar municípios</span>`;
-}
 // ============================================================
 // MUNICÍPIOS — LISTA
 // ============================================================
