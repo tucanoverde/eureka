@@ -922,6 +922,10 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M6 21V10l6-4 6 4v11M10 9v.01M14 9v.01M10 13v.01M14 13v.01M10 17v.01M14 17v.01"/></svg>
       Municípios
     </button>
+    <button class="nav-item" data-page="reuniao">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Reunião Semanal
+    </button>
     <button class="nav-item" data-page="pipeline">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h4v18H3zM10 3h4v12h-4zM17 3h4v8h-4z"/></svg>
       Pipeline
@@ -1182,6 +1186,7 @@ function navigate(page) {
     dashboard: renderDashboard,
     municipios: renderMunicipios,
     pipeline: renderPipeline,
+    reuniao: renderReuniao,
     importar: renderImportar,
     indicadores: renderIndicadores,
     configuracoes: renderConfiguracoes,
@@ -2502,6 +2507,172 @@ function exportarCSV() {
 // ============================================================
 // PIPELINE (KANBAN)
 // ============================================================
+// ============================================================
+// REUNIÃO SEMANAL
+// ============================================================
+function renderReuniao() {
+  const ETAPAS_ATIVAS = ['SQL','R1','R2','R3','Licitacao'];
+  const PESOS = { SQL: 0.25, R1: 0.30, R2: 0.40, R3: 0.50, Licitacao: 0.85 };
+  const TEMPO_REF = { SQL: 14, R1: 21, R2: 21, R3: 14, Licitacao: 30 };
+
+  const hoje = new Date();
+
+  // Municípios ativos no pipeline
+  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+
+  // Calcular campos derivados
+  const rows = ativos.map(m => {
+    // Data de entrada na etapa atual
+    const dataEtapa = {
+      SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
+      R3: m.data_r3, Licitacao: m.data_licitacao
+    }[m.status];
+
+    const tempoEtapa = dataEtapa
+      ? Math.floor((hoje - new Date(dataEtapa)) / 86400000)
+      : (m.tempo_na_etapa || 0);
+
+    const tempoRef = TEMPO_REF[m.status] || 21;
+    const pct = tempoRef > 0 ? tempoEtapa / tempoRef : 0;
+    const health = pct < 0.7 ? 'verde' : pct < 1.0 ? 'amarelo' : 'vermelho';
+    const healthEmoji = { verde: '🟢', amarelo: '🟡', vermelho: '🔴' }[health];
+
+    const receita = m.receita_potencial ||
+      ((m.ef1_alunos||0) * 440 + (m.ef2_alunos||0) * 500);
+    const receitaAjustada = receita * (PESOS[m.status] || 0.25);
+
+    const acao = health === 'vermelho' ? 'Cobrar' :
+                 health === 'amarelo' ? 'Acelerar' : 'Nutrir';
+
+    return { ...m, tempoEtapa, health, healthEmoji, receita, receitaAjustada, acao };
+  }).sort((a, b) => {
+    const order = ['SQL','R1','R2','R3','Licitacao'];
+    return order.indexOf(a.status) - order.indexOf(b.status) ||
+           b.receita - a.receita;
+  });
+
+  // KPIs do topo
+  const totalReceita = rows.reduce((s, r) => s + r.receita, 0);
+  const forecastAjustado = rows.reduce((s, r) => s + r.receitaAjustada, 0);
+  const vermelhos = rows.filter(r => r.health === 'vermelho').length;
+  const ticketMedio = rows.length > 0
+    ? rows.reduce((s, r) => s + r.receita, 0) / rows.length : 0;
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Comercial · Pipeline ativo</div>
+        <h1><em>Reunião Semanal</em></h1>
+      </div>
+      <div class="actions">
+        <span style="font-size:.8rem;color:var(--ink-dim);">${rows.length} municípios ativos · ${new Date().toLocaleDateString('pt-BR')}</span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <!-- KPIs -->
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:1.5rem;">
+        <div class="kpi-card">
+          <div class="kpi-value">${fmtMoney(totalReceita)}</div>
+          <div class="kpi-label">Receita potencial total</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${fmtMoney(forecastAjustado)}</div>
+          <div class="kpi-label">Forecast ajustado</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value" style="color:${vermelhos>0?'var(--danger)':'var(--accent)'}">
+            ${vermelhos}
+          </div>
+          <div class="kpi-label">⚠️ Municípios em atraso</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value">${fmtMoney(ticketMedio)}</div>
+          <div class="kpi-label">Ticket médio</div>
+        </div>
+      </div>
+
+      <!-- Tabela -->
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
+        <table class="data-table" style="font-size:.82rem;">
+          <thead>
+            <tr>
+              <th>Região</th>
+              <th>Município</th>
+              <th>Farol</th>
+              <th class="num">Alunos</th>
+              <th class="num">Receita</th>
+              <th>Status</th>
+              <th class="num">Dias/Etapa</th>
+              <th>Health</th>
+              <th class="num">Receita Aj.</th>
+              <th>Ação</th>
+              <th>Próxima Ação</th>
+              <th>Data</th>
+              <th>Responsável</th>
+              <th>Bloqueio</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0 ? `
+              <tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--ink-dim);">
+                Nenhum município ativo no pipeline. Adicione municípios com status SQL, R1, R2, R3 ou Licitação.
+              </td></tr>
+            ` : rows.map(m => `
+              <tr style="cursor:pointer;" onclick="openDrawer('${m.id}')">
+                <td style="color:var(--ink-dim);font-size:.75rem;">${escapeHtml(m.regiao_administrativa||'—')}</td>
+                <td style="font-weight:600;">${escapeHtml(m.municipio)}</td>
+                <td><span class="pill farol-${m.farol||''}">${m.farol||'—'}</span></td>
+                <td class="num">${fmtNum(m.total_ef||0)}</td>
+                <td class="num">${fmtMoney(m.receita)}</td>
+                <td><span class="pill" style="background:var(--accent-soft);color:var(--accent);font-weight:600;">${m.status}</span></td>
+                <td class="num">${m.tempoEtapa}d</td>
+                <td style="text-align:center;font-size:1rem;">${m.healthEmoji}</td>
+                <td class="num" style="font-weight:600;">${fmtMoney(m.receitaAjustada)}</td>
+                <td><span style="font-size:.75rem;font-weight:600;color:${
+                  m.acao==='Cobrar'?'var(--danger)':
+                  m.acao==='Acelerar'?'var(--warn)':'var(--accent)'
+                };">${m.acao}</span></td>
+                <td style="font-size:.75rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${escapeHtml(m.proxima_acao||'—')}
+                </td>
+                <td style="font-size:.75rem;color:var(--ink-dim);">
+                  ${m.data_proxima_acao ? new Date(m.data_proxima_acao).toLocaleDateString('pt-BR') : '—'}
+                </td>
+                <td style="font-size:.75rem;">${escapeHtml(m.responsavel||'—')}</td>
+                <td style="font-size:.75rem;color:var(--danger);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${escapeHtml(m.bloqueio||'')}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Resumo por etapa -->
+      <div style="margin-top:1.5rem;display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;">
+        ${ETAPAS_ATIVAS.map(etapa => {
+          const muns = rows.filter(r => r.status === etapa);
+          const rev = muns.reduce((s, r) => s + r.receita, 0);
+          const fore = muns.reduce((s, r) => s + r.receitaAjustada, 0);
+          const atraso = muns.filter(r => r.health === 'vermelho').length;
+          return `
+            <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+              <div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem;color:var(--accent);">${etapa}</div>
+              <div style="font-size:1.1rem;font-weight:600;">${muns.length} municípios</div>
+              <div style="font-size:.8rem;color:var(--ink-dim);">${fmtMoney(rev)} potencial</div>
+              <div style="font-size:.8rem;color:var(--ink-soft);">${fmtMoney(fore)} forecast</div>
+              ${atraso > 0 ? `<div style="font-size:.75rem;color:var(--danger);margin-top:.25rem;">⚠️ ${atraso} em atraso</div>` : ''}
+              <div style="font-size:.7rem;color:var(--ink-faint);margin-top:.25rem;">Peso: ${(PESOS[etapa]*100).toFixed(0)}%</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+    </div>
+  `;
+}
+
 function renderPipeline() {
   const stages = [
     { key: 'SQL', label: 'SQL' },
@@ -3343,207 +3514,4 @@ async function processarCSVGenerico(file) {
 
   let inseridos = 0;
   let falhas = 0;
-  for (let i = 0; i < registros.length; i += 100) {
-    const batch = registros.slice(i, i + 100);
-    const { error } = await sb.from('municipios').insert(batch);
-    if (error) {
-      falhas += batch.length;
-      console.error('Erro no lote:', error);
-    } else {
-      inseridos += batch.length;
-    }
-  }
-
-  await loadCoreData();
-
-  result.innerHTML = `<div class="message ${falhas ? 'warn' : 'success'}">
-    <strong>Importação concluída.</strong> ${inseridos} registros inseridos, ${falhas} falhas.
-    ${erros.length ? `<br><br>Avisos: <br>${erros.slice(0, 10).join('<br>')}${erros.length > 10 ? `<br>... e mais ${erros.length - 10}` : ''}` : ''}
-  </div>`;
-}
-
-// ============================================================
-// INDICADORES
-// ============================================================
-async function renderIndicadores() {
-  const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
-
-  document.getElementById('pageContent').innerHTML = `
-    <div class="page-header">
-      <div class="heading">
-        <div class="crumb">Parceiros · Quem traz os leads</div>
-        <h1><em>Indicadores</em></h1>
-      </div>
-      <div class="actions">
-        <button class="btn primary" onclick="novoIndicador()">+ Novo indicador</button>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Código</th><th>Nome</th><th>Email</th><th>Telefone</th><th class="num">% Comissão</th>
-            <th class="num">Municípios</th><th class="num">Receita potencial</th><th>Ativo</th>
-          </tr></thead>
-          <tbody>
-            ${(indicadores || []).map(i => {
-              const muns = state.municipios.filter(m => m.indicacao === i.codigo);
-              const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
-              const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
-              const rev = muns.reduce((s,m) => s + (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2, 0);
-              const comissao = rev * (i.percentual_comissao || 0);
-              return `
-                <tr>
-                  <td><strong>${escapeHtml(i.codigo)}</strong></td>
-                  <td>${escapeHtml(i.nome)}</td>
-                  <td>${escapeHtml(i.email || '—')}</td>
-                  <td>${escapeHtml(i.telefone || '—')}</td>
-                  <td class="num">${fmtPct((i.percentual_comissao || 0) * 100, 2)}</td>
-                  <td class="num">${muns.length}</td>
-                  <td class="num">${fmtMoney(comissao)}</td>
-                  <td>${i.ativo ? '✓' : '—'}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-async function novoIndicador() {
-  const codigo = prompt('Código do indicador (ex: LCM, MNS):');
-  if (!codigo) return;
-  const nome = prompt('Nome completo:');
-  if (!nome) return;
-  const { error } = await sb.from('indicadores_externos').insert({
-    codigo: codigo.trim().toUpperCase(),
-    nome: nome.trim(),
-    percentual_comissao: 0.06,
-    ativo: true,
-  });
-  if (error) { alert('Erro: ' + error.message); return; }
-  renderIndicadores();
-}
-
-// ============================================================
-// CONFIGURAÇÕES
-// ============================================================
-function renderConfiguracoes() {
-  document.getElementById('pageContent').innerHTML = `
-    <div class="page-header">
-      <div class="heading">
-        <div class="crumb">Sistema</div>
-        <h1><em>Configurações</em></h1>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="message">
-        <strong>Seu perfil:</strong> ${escapeHtml(state.perfil?.nome || '')} ·
-        Papel atual: <code class="mono">${escapeHtml(state.perfil?.papel || 'sem papel')}</code>
-        ${state.perfil?.papel !== 'admin' ? `
-          <br><br>Para se promover a admin, vá no SQL Editor do Supabase e execute:
-          <br><code class="mono" style="display: block; padding: 0.5rem; background: var(--bg); margin-top: 0.5rem;">update public.perfis set papel = 'admin' where email = '${escapeHtml(state.user.email)}';</code>
-        ` : ''}
-      </div>
-
-      <div class="section-title">Valores de repasse por aluno</div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Repasse EF1 (R$)</label>
-          <input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1 || 400}">
-        </div>
-        <div class="field">
-          <label>Repasse EF2 (R$)</label>
-          <input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2 || 500}">
-        </div>
-        <div class="field">
-          <label>% Redesa</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa || 0.5}">
-        </div>
-      </div>
-
-      <div class="section-title">Cenários de conversão</div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Agressivo</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.agressivo" value="${(state.configuracoes.cenarios_conversao||{}).agressivo || 1}">
-        </div>
-        <div class="field">
-          <label>Realista</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.realista" value="${(state.configuracoes.cenarios_conversao||{}).realista || 0.5}">
-        </div>
-        <div class="field">
-          <label>Conservador</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.conservador" value="${(state.configuracoes.cenarios_conversao||{}).conservador || 0.25}">
-        </div>
-      </div>
-
-      <div class="section-title">Pesos do indicador de performance</div>
-      <div class="message warn">
-        Alterar estes pesos não recalcula automaticamente os scores já salvos. Após mudar, reimporte os dados ou edite os municípios para recalcular.
-      </div>
-      <div class="form-grid">
-        <div class="field">
-          <label>Peso IDEB</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.ideb" value="${(state.configuracoes.pesos_score||{}).ideb || 0.35}">
-        </div>
-        <div class="field">
-          <label>Peso SAEB</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.saeb" value="${(state.configuracoes.pesos_score||{}).saeb || 0.35}">
-        </div>
-        <div class="field">
-          <label>Peso Evasão</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.evasao" value="${(state.configuracoes.pesos_score||{}).evasao || 0.30}">
-        </div>
-      </div>
-
-      <div style="margin-top: 2rem;">
-        <button class="btn primary" onclick="salvarConfiguracoes()">Salvar configurações</button>
-      </div>
-    </div>
-  `;
-}
-
-async function salvarConfiguracoes() {
-  const simples = document.querySelectorAll('[data-cfg]');
-  const nested = document.querySelectorAll('[data-cfg-nested]');
-
-  const updates = [];
-
-  simples.forEach(el => {
-    updates.push({
-      chave: el.dataset.cfg,
-      valor: parseFloat(el.value),
-      atualizado_por: state.user.id,
-    });
-  });
-
-  // Agrupa nested
-  const grupos = {};
-  nested.forEach(el => {
-    const [grupo, sub] = el.dataset.cfgNested.split('.');
-    grupos[grupo] = grupos[grupo] || {};
-    grupos[grupo][sub] = parseFloat(el.value);
-  });
-  Object.entries(grupos).forEach(([chave, valor]) => {
-    updates.push({ chave, valor, atualizado_por: state.user.id });
-  });
-
-  for (const u of updates) {
-    await sb.from('configuracoes').upsert(u);
-  }
-
-  await loadCoreData();
-  alert('Configurações salvas.');
-  renderConfiguracoes();
-}
-
-// ============================================================
-// START
-// ============================================================
-initApp();
-</script>
-</body>
-</html>
+  for (let i = 0; i < registros.length; i
