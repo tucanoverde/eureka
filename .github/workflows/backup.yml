@@ -77,8 +77,25 @@ jobs:
                   json.dump(all_rows, f, ensure_ascii=False, indent=2, default=str)
               print(f'  {len(all_rows)} registros salvos')
 
-          print(f'\nBackup completo: {data}')
+          print(f'Backup completo: {data}')
           EOF
+
+      - name: Limpar backups com mais de 30 dias
+        run: |
+          python3 -c "
+          import os, shutil
+          from datetime import datetime, timedelta
+          limite = datetime.now() - timedelta(days=30)
+          pasta = 'backups'
+          if os.path.exists(pasta):
+              for d in os.listdir(pasta):
+                  try:
+                      if datetime.strptime(d, '%Y-%m-%d') < limite:
+                          shutil.rmtree(os.path.join(pasta, d))
+                          print(f'Removido: {d}')
+                  except: pass
+          print('Limpeza OK')
+          "
 
       - name: Commit e push do backup
         run: |
