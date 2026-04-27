@@ -4318,13 +4318,7 @@ async function novoIndicadorRapido() {
 // CONFIGURAÇÕES
 // ============================================================
 function renderConfiguracoes() {
-  // Calcular forecast atual para usar como base no modelo de remuneração
-  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
-  const cfg_p = state.configuracoes.pesos_forecast || {};
-  const PESOS_FC = { SQL: cfg_p.sql||0.25, R1: cfg_p.r1||0.30, R2: cfg_p.r2||0.40, R3: cfg_p.r3||0.50, Licitacao: cfg_p.licitacao||0.85 };
-  const forecastPipeline = state.municipios
-    .filter(m => ETAPAS.includes(m.status))
-    .reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500) * (PESOS_FC[m.status]||0.25), 0);
+  const rem = state.configuracoes.remuneracao || {};
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <div class="heading">
@@ -4334,92 +4328,50 @@ function renderConfiguracoes() {
     </div>
     <div class="page-body">
       <div class="message">
-        <strong>Seu perfil:</strong> ${escapeHtml(state.perfil?.nome || '')} ·
-        Papel atual: <code class="mono">${escapeHtml(state.perfil?.papel || 'sem papel')}</code>
-        ${state.perfil?.papel !== 'admin' ? `
-          <br><br>Para se promover a admin, vá no SQL Editor do Supabase e execute:
-          <br><code class="mono" style="display: block; padding: 0.5rem; background: var(--bg); margin-top: 0.5rem;">update public.perfis set papel = 'admin' where email = '${escapeHtml(state.user.email)}';</code>
-        ` : ''}
+        <strong>Perfil:</strong> ${escapeHtml(state.perfil?.nome||'')} ·
+        <code class="mono">${escapeHtml(state.perfil?.papel||'sem papel')}</code>
       </div>
 
-      <div class="section-title">Valores de repasse por aluno</div>
+      <div class="section-title">Repasse por aluno</div>
       <div class="form-grid">
-        <div class="field">
-          <label>Repasse EF1 (R$)</label>
-          <input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1 || 400}">
-        </div>
-        <div class="field">
-          <label>Repasse EF2 (R$)</label>
-          <input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2 || 500}">
-        </div>
-        <div class="field">
-          <label>% Redesa</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa || 0.5}">
-        </div>
+        <div class="field"><label>EF1 (R$)</label><input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1||400}"></div>
+        <div class="field"><label>EF2 (R$)</label><input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2||500}"></div>
+        <div class="field"><label>% Redesa (0-1)</label><input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa||0.5}"></div>
       </div>
 
       <div class="section-title">Cenários de conversão</div>
       <div class="form-grid">
-        <div class="field">
-          <label>Agressivo</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.agressivo" value="${(state.configuracoes.cenarios_conversao||{}).agressivo || 1}">
-        </div>
-        <div class="field">
-          <label>Realista</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.realista" value="${(state.configuracoes.cenarios_conversao||{}).realista || 0.5}">
-        </div>
-        <div class="field">
-          <label>Conservador</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.conservador" value="${(state.configuracoes.cenarios_conversao||{}).conservador || 0.25}">
-        </div>
+        <div class="field"><label>Agressivo (0-1)</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.agressivo" value="${(state.configuracoes.cenarios_conversao||{}).agressivo||1}"></div>
+        <div class="field"><label>Realista (0-1)</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.realista" value="${(state.configuracoes.cenarios_conversao||{}).realista||0.5}"></div>
+        <div class="field"><label>Conservador (0-1)</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="cenarios_conversao.conservador" value="${(state.configuracoes.cenarios_conversao||{}).conservador||0.25}"></div>
       </div>
 
       <div class="section-title">Pesos de Forecast por Etapa (%)</div>
-      <div class="message">
-        Define a probabilidade de conversão em cada etapa do pipeline. Afeta o Forecast Ajustado em todas as telas.
-      </div>
+      <div class="message">Probabilidade de conversão por etapa. Afeta o Forecast Ajustado em todas as telas.</div>
       <div class="form-grid">
-        <div class="field">
-          <label>SQL (%)</label>
-          <input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${Math.round(((state.configuracoes.pesos_forecast||{}).sql || 0.25)*100)}">
-        </div>
-        <div class="field">
-          <label>R1 (%)</label>
-          <input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r1 || 0.30)*100)}">
-        </div>
-        <div class="field">
-          <label>R2 (%)</label>
-          <input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r2 || 0.40)*100)}">
-        </div>
-        <div class="field">
-          <label>R3 (%)</label>
-          <input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r3 || 0.50)*100)}">
-        </div>
-        <div class="field">
-          <label>Licitação (%)</label>
-          <input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${Math.round(((state.configuracoes.pesos_forecast||{}).licitacao || 0.85)*100)}">
-        </div>
+        <div class="field"><label>SQL (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${Math.round(((state.configuracoes.pesos_forecast||{}).sql||0.25)*100)}"></div>
+        <div class="field"><label>R1 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r1||0.30)*100)}"></div>
+        <div class="field"><label>R2 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r2||0.40)*100)}"></div>
+        <div class="field"><label>R3 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r3||0.50)*100)}"></div>
+        <div class="field"><label>Licitação (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${Math.round(((state.configuracoes.pesos_forecast||{}).licitacao||0.85)*100)}"></div>
       </div>
 
       <div class="section-title">Modelo de Remuneração</div>
-      <div class="message">
-        Defina os percentuais de distribuição do faturamento Redesa. Os campos em azul são editáveis — o cálculo atualiza automaticamente.
-      </div>
+      <div class="message">Campos em azul são editáveis. Apresentador = soma das tarefas. Equipe = resíduo automático. LM, MV, Edu = Equipe÷4. Fundo = resíduo da equipe.</div>
 
-      <!-- Calculadora de Remuneração -->
+      <!-- Calculadora -->
       <div id="calc-remuneracao" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1.25rem;margin-bottom:1rem;">
 
-        <!-- Header: Forecast → Impostos → Redesa -->
+        <!-- Header -->
         <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;margin-bottom:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center;">
           <div>
-            <div style="font-size:.75rem;opacity:.8;">Forecast Ajustado (pipeline)</div>
+            <div style="font-size:.75rem;opacity:.8;">Forecast Ajustado</div>
             <div id="cr-forecast" style="font-size:1.3rem;font-weight:700;">—</div>
           </div>
           <div>
             <div style="font-size:.75rem;opacity:.8;margin-bottom:.25rem;">Impostos (%)</div>
             <div style="display:flex;align-items:center;justify-content:center;gap:.4rem;">
-              <input type="number" id="cr-impostos" step="0.01" min="0" max="100"
-                value="${((state.configuracoes.remuneracao||{}).impostos||3.18)}"
+              <input type="number" id="cr-impostos" step="0.01" min="0" max="100" value="${rem.impostos||3.18}"
                 style="width:65px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);border-radius:3px;color:#fff;font:inherit;font-size:.95rem;font-weight:700;text-align:center;padding:3px 6px;">
               <span style="opacity:.8;">%</span>
             </div>
@@ -4430,387 +4382,131 @@ function renderConfiguracoes() {
           </div>
         </div>
 
-        <!-- Tarefas do Apresentador (inputs editáveis) -->
-        <div style="margin-bottom:1rem;">
-          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">
-            Tarefas do Apresentador
-            <span style="font-weight:400;color:var(--ink-faint);">(soma = % Apresentador)</span>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;">
-            ${[
-              ['sql_abertura','Abertura SQL (%)',4],
-              ['r1_participacao','R1 Participação (%)',4],
-              ['distribuicao','Distribuição (%)',12],
-            ].map(([id,label,def]) => `
-              <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.75rem;text-align:center;">
-                <div style="font-size:.72rem;color:var(--blue);font-weight:600;margin-bottom:.4rem;">${label}</div>
-                <div style="display:flex;align-items:center;justify-content:center;gap:3px;">
-                  <input type="number" id="cr-${id}" step="0.5" min="0" max="100"
-                    value="${((state.configuracoes.remuneracao||{})[id])||def}"
-                    style="width:55px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:1rem;font-weight:700;text-align:center;padding:2px 4px;color:var(--blue);">
-                  <span style="font-size:.8rem;color:var(--blue);">%</span>
-                </div>
-                <div id="cr-${id}-val" style="font-size:.8rem;color:var(--accent);font-weight:600;margin-top:.25rem;">—</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-
-        <!-- Distribuição principal -->
-        <div style="margin-bottom:1rem;">
-          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">
-            Distribuição do Redesa
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;">
-
-            <!-- Apresentador (calculado) -->
-            <div style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--ink-dim);font-weight:600;margin-bottom:.3rem;">Apresentador</div>
-              <div id="cr-apresentador-pct" style="font-size:.95rem;font-weight:700;color:var(--accent);">—</div>
-              <div id="cr-apresentador-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-              <div style="font-size:.65rem;color:var(--ink-faint);margin-top:2px;">calculado</div>
-            </div>
-
-            <!-- Consolidador (editável) -->
-            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Consolidador</div>
-              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-                <input type="number" id="cr-consolidador" step="0.5" min="0" max="100"
-                  value="${((state.configuracoes.remuneracao||{}).consolidador)||0}"
-                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
-                <span style="font-size:.75rem;color:var(--blue);">%</span>
-              </div>
-              <div id="cr-consolidador-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-            </div>
-
-            <!-- Gestão (editável) -->
-            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Gestão Comercial</div>
-              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-                <input type="number" id="cr-gestao" step="0.5" min="0" max="100"
-                  value="${((state.configuracoes.remuneracao||{}).gestao)||10}"
-                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
-                <span style="font-size:.75rem;color:var(--blue);">%</span>
-              </div>
-              <div id="cr-gestao-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-            </div>
-
-            <!-- OPEX (editável) -->
-            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">OPEX</div>
-              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-                <input type="number" id="cr-opex" step="0.5" min="0" max="100"
-                  value="${((state.configuracoes.remuneracao||{}).opex)||10}"
-                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
-                <span style="font-size:.75rem;color:var(--blue);">%</span>
-              </div>
-              <div id="cr-opex-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-            </div>
-
-            <!-- Internalizado (editável) -->
-            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Internalizado</div>
-              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-                <input type="number" id="cr-internalizado" step="0.5" min="0" max="100"
-                  value="${((state.configuracoes.remuneracao||{}).internalizado)||25}"
-                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
-                <span style="font-size:.75rem;color:var(--blue);">%</span>
-              </div>
-              <div id="cr-internalizado-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-            </div>
-
-            <!-- Equipe (calculado = resíduo) -->
-            <div style="background:var(--gold-soft);border:2px solid var(--gold);border-radius:6px;padding:.6rem;text-align:center;">
-              <div style="font-size:.68rem;color:var(--gold);font-weight:600;margin-bottom:.3rem;">Equipe</div>
-              <div id="cr-equipe-pct" style="font-size:.95rem;font-weight:700;color:var(--gold);">—</div>
-              <div id="cr-equipe-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-              <div style="font-size:.65rem;color:var(--ink-faint);margin-top:2px;">resíduo</div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- Subdivisão da equipe (todos calculados) -->
-        <div style="margin-bottom:1rem;">
-          <div style="font-size:.75rem;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">Equipe — subdivisão (calculado automaticamente)</div>
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;">
-            ${['lm','mv','lcm','edu','fundo'].map((id,i) => `
-              <div style="background:var(--gold-soft);border:1px solid var(--gold);border-radius:4px;padding:.5rem;text-align:center;">
-                <div style="font-size:.7rem;color:var(--gold);font-weight:600;">${['LM','MV','LCM','Edu','Fundo Res.'][i]}</div>
-                <div id="cr-${id}-pct" style="font-size:.85rem;font-weight:700;color:var(--gold);margin:.2rem 0;">—</div>
-                <div id="cr-${id}-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
-              </div>
-            `).join('')}
-          </div>
+        <!-- Tabela principal - igual ao Excel -->
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem;min-width:900px;">
+            <thead>
+              <tr style="background:var(--bg);">
+                <th style="padding:.5rem .6rem;text-align:left;border:1px solid var(--line);font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;">TAREFA / PAPEL</th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--bg);color:var(--ink-dim);font-size:.7rem;">APRES.<br><span style="font-weight:400;font-style:italic;">calculado</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--blue-soft);color:var(--blue);font-size:.7rem;">CONSOL.<br><span style="font-weight:400;font-style:italic;">input</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--blue-soft);color:var(--blue);font-size:.7rem;">GESTÃO<br><span style="font-weight:400;font-style:italic;">input</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--blue-soft);color:var(--blue);font-size:.7rem;">OPEX<br><span style="font-weight:400;font-style:italic;">input</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--blue-soft);color:var(--blue);font-size:.7rem;">INTERN.<br><span style="font-weight:400;font-style:italic;">input</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);font-size:.7rem;">EQUIPE<br><span style="font-weight:400;font-style:italic;">resíduo</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);font-size:.7rem;">LM<br><span style="font-weight:400;font-style:italic;">eq÷4</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);font-size:.7rem;">MV<br><span style="font-weight:400;font-style:italic;">eq÷4</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--blue-soft);color:var(--blue);font-size:.7rem;">LCM<br><span style="font-weight:400;font-style:italic;">input</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);font-size:.7rem;">EDU<br><span style="font-weight:400;font-style:italic;">eq÷4</span></th>
+                <th style="padding:.5rem;text-align:center;border:1px solid var(--line);background:var(--gold-soft);color:var(--gold);font-size:.7rem;">FUNDO<br><span style="font-weight:400;font-style:italic;">resíduo</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Linha % -->
+              <tr style="background:var(--bg-elev);">
+                <td style="padding:.5rem .6rem;border:1px solid var(--line);font-weight:600;font-size:.8rem;">% do Redesa</td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--bg);">
+                  <div id="cr-apresentador-pct" style="font-weight:700;color:var(--accent);font-size:.9rem;">—</div>
+                </td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-consolidador" step="0.5" min="0" max="100" value="${rem.consolidador||0}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-gestao" step="0.5" min="0" max="100" value="${rem.gestao||10}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-opex" step="0.5" min="0" max="100" value="${rem.opex||10}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-internalizado" step="0.5" min="0" max="100" value="${rem.internalizado||25}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--gold-soft);">
+                  <div id="cr-equipe-pct" style="font-weight:700;color:var(--gold);font-size:.9rem;">—</div>
+                </td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--gold-soft);">
+                  <div id="cr-lm-pct" style="font-weight:700;color:var(--gold);font-size:.9rem;">—</div>
+                </td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--gold-soft);">
+                  <div id="cr-mv-pct" style="font-weight:700;color:var(--gold);font-size:.9rem;">—</div>
+                </td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-lcm" step="0.25" min="0" max="100" value="${rem.lcm||6}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--gold-soft);">
+                  <div id="cr-edu-pct" style="font-weight:700;color:var(--gold);font-size:.9rem;">—</div>
+                </td>
+                <td style="padding:.4rem;border:1px solid var(--line);text-align:center;background:var(--gold-soft);">
+                  <div id="cr-fundo-pct" style="font-weight:700;color:var(--gold);font-size:.9rem;">—</div>
+                </td>
+              </tr>
+              <!-- Linha R$ -->
+              <tr style="background:var(--accent-soft);">
+                <td style="padding:.5rem .6rem;border:1px solid var(--line);font-weight:600;color:var(--accent);font-size:.8rem;">Valor (R$)</td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-apresentador-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-consolidador-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-gestao-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-opex-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-internalizado-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-equipe-val" style="color:var(--gold);">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-lm-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-mv-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-lcm-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-edu-val">—</b></td>
+                <td style="padding:.5rem;border:1px solid var(--line);text-align:center;"><b id="cr-fundo-val">—</b></td>
+              </tr>
+              <!-- Tarefas do apresentador -->
+              <tr>
+                <td style="padding:.4rem .6rem;border:1px solid var(--line);font-size:.78rem;color:var(--ink-dim);">Abertura SQL</td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-sql_abertura" step="0.5" min="0" max="100" value="${rem.sql_abertura||4}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td colspan="10" style="border:1px solid var(--line);background:var(--bg);"></td>
+              </tr>
+              <tr>
+                <td style="padding:.4rem .6rem;border:1px solid var(--line);font-size:.78rem;color:var(--ink-dim);">R1 Participação</td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-r1_participacao" step="0.5" min="0" max="100" value="${rem.r1_participacao||4}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td colspan="10" style="border:1px solid var(--line);background:var(--bg);"></td>
+              </tr>
+              <tr>
+                <td style="padding:.4rem .6rem;border:1px solid var(--line);font-size:.78rem;color:var(--ink-dim);">Distribuição</td>
+                <td style="padding:.3rem;border:1px solid var(--line);text-align:center;background:var(--blue-soft);">
+                  <input type="number" id="cr-distribuicao" step="0.5" min="0" max="100" value="${rem.distribuicao||12}"
+                    style="width:48px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.85rem;font-weight:700;text-align:center;padding:2px;color:var(--blue);">%
+                </td>
+                <td colspan="10" style="border:1px solid var(--line);background:var(--bg);"></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- Totalizador -->
-        <div style="background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.75rem;display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.75rem;display:flex;gap:1.5rem;align-items:center;margin-top:1rem;">
           <span style="font-size:.8rem;color:var(--ink-dim);">Total distribuído:</span>
           <span id="cr-total-pct" style="font-weight:700;font-size:1rem;">—</span>
           <span id="cr-total-val" style="font-weight:700;color:var(--accent);">—</span>
-          <span style="font-size:.75rem;color:var(--ink-faint);">deve somar 100%</span>
+          <span style="font-size:.75rem;color:var(--ink-faint);margin-left:auto;">deve sempre somar 100%</span>
         </div>
+      </div>
 
-      </div>
-      <div class="message warn">
-        Alterar estes pesos não recalcula automaticamente os scores já salvos. Após mudar, reimporte os dados ou edite os municípios para recalcular.
-      </div>
+      <div class="section-title">Pesos do indicador de performance</div>
+      <div class="message warn">Alterar estes pesos não recalcula os scores já salvos.</div>
       <div class="form-grid">
-        <div class="field">
-          <label>Peso IDEB</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.ideb" value="${(state.configuracoes.pesos_score||{}).ideb || 0.35}">
-        </div>
-        <div class="field">
-          <label>Peso SAEB</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.saeb" value="${(state.configuracoes.pesos_score||{}).saeb || 0.35}">
-        </div>
-        <div class="field">
-          <label>Peso Evasão</label>
-          <input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.evasao" value="${(state.configuracoes.pesos_score||{}).evasao || 0.30}">
-        </div>
+        <div class="field"><label>Peso IDEB</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.ideb" value="${(state.configuracoes.pesos_score||{}).ideb||0.35}"></div>
+        <div class="field"><label>Peso SAEB</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.saeb" value="${(state.configuracoes.pesos_score||{}).saeb||0.35}"></div>
+        <div class="field"><label>Peso Evasão</label><input type="number" step="0.01" min="0" max="1" data-cfg-nested="pesos_score.evasao" value="${(state.configuracoes.pesos_score||{}).evasao||0.30}"></div>
       </div>
 
-      <div style="margin-top: 2rem;">
+      <div style="margin-top:2rem;">
         <button class="btn primary" onclick="salvarConfiguracoes()">Salvar configurações</button>
-      </div>
-
-      <!-- MODELO DE REMUNERAÇÃO -->
-      <div class="section-title" style="margin-top:2.5rem;">Modelo de Remuneração</div>
-      <div class="message">
-        Calculadora interativa baseada no modelo do Excel. Altere os campos azuis e os resultados atualizam automaticamente.
-      </div>
-
-      <!-- Inputs principais -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
-
-        <!-- Coluna 1: Distribuição do faturamento -->
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1.25rem;">
-          <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;color:var(--accent);">Distribuição do Faturamento</h3>
-          <div style="display:flex;flex-direction:column;gap:.6rem;">
-            ${[
-              ['rem_apresentador', 'Apresentador (%)', 20],
-              ['rem_consolidador', 'Consolidador (%)', 0],
-              ['rem_gestao', 'Gestão (%)', 15],
-              ['rem_opex', 'Custos Operacionais (%)', 20],
-              ['rem_redesa', 'Redesa (%)', 20],
-            ].map(([id, label, def]) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;">
-                <label style="font-size:.8rem;color:var(--ink-dim);flex:1;">${label}</label>
-                <input type="number" id="${id}" step="1" min="0" max="100" value="${def}"
-                  oninput="calcularRemuneracao()"
-                  style="width:70px;padding:4px 8px;border:2px solid #3b82f6;border-radius:4px;
-                  background:#eff6ff;font:inherit;font-size:.85rem;text-align:center;font-weight:600;">
-              </div>
-            `).join('')}
-            <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding-top:.5rem;border-top:1px solid var(--line);">
-              <span>Total</span>
-              <span id="rem_total" style="color:var(--accent);">75%</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Coluna 2: Tarefas do Apresentador -->
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1.25rem;">
-          <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;color:var(--accent);">Tarefas do Apresentador</h3>
-          <div style="display:flex;flex-direction:column;gap:.6rem;">
-            ${[
-              ['rem_sql', 'Abertura SQL (%)', 4],
-              ['rem_r1', 'R1 Participação (%)', 4],
-              ['rem_distribuicao', 'Distribuição (%)', 12],
-            ].map(([id, label, def]) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;">
-                <label style="font-size:.8rem;color:var(--ink-dim);flex:1;">${label}</label>
-                <input type="number" id="${id}" step="1" min="0" max="100" value="${def}"
-                  oninput="calcularRemuneracao()"
-                  style="width:70px;padding:4px 8px;border:2px solid #3b82f6;border-radius:4px;
-                  background:#eff6ff;font:inherit;font-size:.85rem;text-align:center;font-weight:600;">
-              </div>
-            `).join('')}
-            <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700;padding-top:.5rem;border-top:1px solid var(--line);">
-              <span>Total Tarefas</span>
-              <span id="rem_tarefas_total" style="color:var(--accent);">20%</span>
-            </div>
-
-            <h3 style="font-size:.9rem;font-weight:700;margin-top:1rem;margin-bottom:.75rem;color:var(--accent);">Divisão Internalizado</h3>
-            ${[
-              ['rem_afonso', 'Afonso (%)', 30],
-              ['rem_marcelo', 'Marcelo (%)', 30],
-              ['rem_edu', 'Edu (%)', 40],
-            ].map(([id, label, def]) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;">
-                <label style="font-size:.8rem;color:var(--ink-dim);flex:1;">${label}</label>
-                <input type="number" id="${id}" step="1" min="0" max="100" value="${def}"
-                  oninput="calcularRemuneracao()"
-                  style="width:70px;padding:4px 8px;border:2px solid #3b82f6;border-radius:4px;
-                  background:#eff6ff;font:inherit;font-size:.85rem;text-align:center;font-weight:600;">
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-
-      <!-- Base de cálculo -->
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1.25rem;margin-bottom:1.5rem;">
-        <h3 style="font-size:.9rem;font-weight:700;margin-bottom:1rem;color:var(--accent);">Base de Cálculo</h3>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-          <div style="display:flex;flex-direction:column;gap:.25rem;">
-            <label style="font-size:.75rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.05em;">Receita Bruta (R$)</label>
-            <input type="number" id="rem_receita_bruta" step="1000" value="${Math.round(forecastPipeline||0)}"
-              oninput="calcularRemuneracao()"
-              style="padding:8px 12px;border:2px solid #3b82f6;border-radius:4px;
-              background:#eff6ff;font:inherit;font-size:1rem;font-weight:700;text-align:right;">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:.25rem;">
-            <label style="font-size:.75rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.05em;">Impostos (%)</label>
-            <input type="number" id="rem_impostos" step="0.01" value="3.18"
-              oninput="calcularRemuneracao()"
-              style="padding:8px 12px;border:2px solid #3b82f6;border-radius:4px;
-              background:#eff6ff;font:inherit;font-size:1rem;font-weight:700;text-align:right;">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:.25rem;">
-            <label style="font-size:.75rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.05em;">% Faturamento Redesa</label>
-            <input type="number" id="rem_pct_redesa" step="1" value="50"
-              oninput="calcularRemuneracao()"
-              style="padding:8px 12px;border:2px solid #3b82f6;border-radius:4px;
-              background:#eff6ff;font:inherit;font-size:1rem;font-weight:700;text-align:right;">
-          </div>
-        </div>
-      </div>
-
-      <!-- Resultado calculado -->
-      <div id="rem_resultado" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;overflow:hidden;">
-        <!-- preenchido por calcularRemuneracao() -->
-      </div>
-
-    </div>
-  `;
-
-  // Calcular na primeira renderização
-  setTimeout(calcularRemuneracao, 100);
-}
-
-function calcularRemuneracao() {
-  const g = id => parseFloat(document.getElementById(id)?.value || 0);
-
-  // Inputs
-  const receitaBruta  = g('rem_receita_bruta');
-  const impostos      = g('rem_impostos') / 100;
-  const pctRedesa     = g('rem_pct_redesa') / 100;
-
-  const pApres  = g('rem_apresentador') / 100;
-  const pCons   = g('rem_consolidador') / 100;
-  const pGestao = g('rem_gestao') / 100;
-  const pOpex   = g('rem_opex') / 100;
-  const pRedesa = g('rem_redesa') / 100;
-
-  const pSQL   = g('rem_sql') / 100;
-  const pR1    = g('rem_r1') / 100;
-  const pDist  = g('rem_distribuicao') / 100;
-
-  const pAfonso  = g('rem_afonso') / 100;
-  const pMarcelo = g('rem_marcelo') / 100;
-  const pEdu     = g('rem_edu') / 100;
-
-  // Cálculos
-  const total = pApres + pCons + pGestao + pOpex + pRedesa;
-  const tarefasTotal = pSQL + pR1 + pDist;
-
-  const recLiq     = receitaBruta * (1 - impostos);
-  const fatRedesa  = recLiq * pctRedesa;
-  const internalizado = fatRedesa * 0.25; // 25% do Redesa
-
-  const vApres  = fatRedesa * pApres;
-  const vCons   = fatRedesa * pCons;
-  const vGestao = fatRedesa * pGestao;
-  const vOpex   = fatRedesa * pOpex;
-  const vEquipe = fatRedesa * (1 - pApres - pCons - pGestao - pOpex - pRedesa);
-
-  const vSQL   = vApres * pSQL;
-  const vR1    = vApres * pR1;
-  const vDist  = vApres * pDist;
-
-  const vAfonso  = internalizado * pAfonso;
-  const vMarcelo = internalizado * pMarcelo;
-  const vEdu     = internalizado * pEdu;
-
-  // Atualizar totais
-  const totalEl = document.getElementById('rem_total');
-  if (totalEl) {
-    totalEl.textContent = (total*100).toFixed(1) + '%';
-    totalEl.style.color = Math.abs(total - 0.75) < 0.01 ? 'var(--accent)' : 'var(--danger)';
-  }
-  const tarefasEl = document.getElementById('rem_tarefas_total');
-  if (tarefasEl) tarefasEl.textContent = (tarefasTotal*100).toFixed(1) + '%';
-
-  // Resultado
-  const res = document.getElementById('rem_resultado');
-  if (!res) return;
-
-  res.innerHTML = `
-    <div style="padding:.75rem 1.25rem;background:var(--accent);color:#fff;font-weight:700;font-size:.85rem;">
-      Resultado Calculado
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--line);">
-      ${[
-        ['Receita Bruta', receitaBruta],
-        ['Receita Líquida', recLiq],
-        ['Faturamento Redesa', fatRedesa],
-        ['Internalizado (25%)', internalizado],
-      ].map(([l,v]) => `
-        <div style="padding:1rem;border-right:1px solid var(--line);text-align:center;">
-          <div style="font-size:.7rem;color:var(--ink-dim);margin-bottom:.25rem;">${l}</div>
-          <div style="font-size:1rem;font-weight:700;color:var(--accent);">${fmtMoney(v)}</div>
-        </div>
-      `).join('')}
-    </div>
-
-    <div style="padding:1.25rem;">
-      <div style="font-size:.8rem;font-weight:700;color:var(--ink-dim);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">Distribuição do Faturamento Redesa</div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.75rem;margin-bottom:1.25rem;">
-        ${[
-          ['Apresentador', vApres, pApres],
-          ['Consolidador', vCons, pCons],
-          ['Gestão', vGestao, pGestao],
-          ['OPEX', vOpex, pOpex],
-          ['Equipe', vEquipe, 1-pApres-pCons-pGestao-pOpex-pRedesa],
-        ].map(([l,v,p]) => `
-          <div style="background:var(--bg);border-radius:4px;padding:.75rem;text-align:center;">
-            <div style="font-size:.7rem;color:var(--ink-dim);margin-bottom:.2rem;">${l}</div>
-            <div style="font-size:.85rem;font-weight:700;color:var(--accent);">${fmtMoney(v)}</div>
-            <div style="font-size:.7rem;color:var(--ink-faint);">${(p*100).toFixed(1)}%</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <div style="font-size:.8rem;font-weight:700;color:var(--ink-dim);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">Tarefas do Apresentador</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.25rem;">
-        ${[
-          ['Abertura SQL', vSQL, pSQL],
-          ['R1 Participação', vR1, pR1],
-          ['Distribuição', vDist, pDist],
-        ].map(([l,v,p]) => `
-          <div style="background:var(--bg);border-radius:4px;padding:.75rem;text-align:center;">
-            <div style="font-size:.7rem;color:var(--ink-dim);margin-bottom:.2rem;">${l}</div>
-            <div style="font-size:.85rem;font-weight:700;color:var(--accent);">${fmtMoney(v)}</div>
-            <div style="font-size:.7rem;color:var(--ink-faint);">${(p*100).toFixed(1)}%</div>
-          </div>
-        `).join('')}
-      </div>
-
-      <div style="font-size:.8rem;font-weight:700;color:var(--ink-dim);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">Divisão do Internalizado</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;">
-        ${[
-          ['Afonso', vAfonso, pAfonso],
-          ['Marcelo', vMarcelo, pMarcelo],
-          ['Edu', vEdu, pEdu],
-        ].map(([l,v,p]) => `
-          <div style="background:var(--bg);border-radius:4px;padding:.75rem;text-align:center;">
-            <div style="font-size:.7rem;color:var(--ink-dim);margin-bottom:.2rem;">${l}</div>
-            <div style="font-size:.85rem;font-weight:700;color:var(--accent);">${fmtMoney(v)}</div>
-            <div style="font-size:.7rem;color:var(--ink-faint);">${(p*100).toFixed(1)}%</div>
-          </div>
-        `).join('')}
       </div>
     </div>
   `;
@@ -4821,7 +4517,6 @@ function calcularRemuneracao() {
   const el = (id) => document.getElementById(id);
   if (!el('cr-forecast')) return;
 
-  // Forecast do pipeline ativo
   const _cfg_p = state.configuracoes.pesos_forecast || {};
   const PESOS = { SQL: _cfg_p.sql||0.25, R1: _cfg_p.r1||0.30, R2: _cfg_p.r2||0.40, R3: _cfg_p.r3||0.50, Licitacao: _cfg_p.licitacao||0.85 };
   const ativos = state.municipios.filter(m => Object.keys(PESOS).includes(m.status));
@@ -4834,51 +4529,39 @@ function calcularRemuneracao() {
   el('cr-forecast').textContent = fmtMoney(forecast);
   el('cr-redesa').textContent = fmtMoney(redesa);
 
-  // Inputs editáveis (% do Redesa)
-  const sql_ab  = parseFloat(el('cr-sql_abertura')?.value  || 4)  / 100;
-  const r1_part = parseFloat(el('cr-r1_participacao')?.value || 4) / 100;
-  const distrib = parseFloat(el('cr-distribuicao')?.value  || 12) / 100;
-  const opex    = parseFloat(el('cr-opex')?.value          || 10) / 100;
-  const interal = parseFloat(el('cr-internalizado')?.value || 25) / 100;
-  const consol  = parseFloat(el('cr-consolidador')?.value  || 0)  / 100;
+  // Inputs
+  const sql_ab  = parseFloat(el('cr-sql_abertura')?.value    || 4)  / 100;
+  const r1_part = parseFloat(el('cr-r1_participacao')?.value || 4)  / 100;
+  const distrib = parseFloat(el('cr-distribuicao')?.value    || 12) / 100;
+  const consol  = parseFloat(el('cr-consolidador')?.value    || 0)  / 100;
+  const gestao  = parseFloat(el('cr-gestao')?.value          || 10) / 100;
+  const opex    = parseFloat(el('cr-opex')?.value            || 10) / 100;
+  const interal = parseFloat(el('cr-internalizado')?.value   || 25) / 100;
+  const lcm_in  = parseFloat(el('cr-lcm')?.value             || 6)  / 100;
 
-  // Apresentador = soma das tarefas
-  const apres = sql_ab + r1_part + distrib;
-
-  // Equipe = resíduo (1 - todos os outros)
-  const gestao = parseFloat(el('cr-gestao')?.value || 10) / 100;
+  // Calculados
+  const apres  = sql_ab + r1_part + distrib;
   const equipe = 1 - (apres + consol + gestao + opex + interal);
+  const lm_pct  = equipe / 4;
+  const mv_pct  = equipe / 4;
+  const edu_pct = equipe / 4;
+  const fundo   = equipe - lcm_in - lm_pct - mv_pct - edu_pct;
 
-  // Subdivisão da equipe
-  const lcm_pct   = (10/100) - sql_ab;   // 10% - Abertura SQL
-  const lm_pct    = equipe / 4;
-  const mv_pct    = equipe / 4;
-  const edu_pct   = equipe / 4;
-  const fundo_pct = equipe - lcm_pct - lm_pct - mv_pct - edu_pct;
+  const setPct = (id, pct) => { if (el(`cr-${id}-pct`)) el(`cr-${id}-pct`).textContent = (pct*100).toFixed(2) + '%'; };
+  const setVal = (id, pct) => { if (el(`cr-${id}-val`)) el(`cr-${id}-val`).textContent = fmtMoney(redesa * pct); };
 
-  // Atualizar display do Apresentador
-  if (el('cr-apresentador-display')) {
-    el('cr-apresentador-display').textContent = (apres*100).toFixed(2) + '%';
-  }
-  if (el('cr-apresentador-val')) el('cr-apresentador-val').textContent = fmtMoney(redesa * apres);
+  setPct('apresentador', apres); setVal('apresentador', apres);
+  setVal('consolidador', consol);
+  setVal('gestao', gestao);
+  setVal('opex', opex);
+  setVal('internalizado', interal);
+  setPct('equipe', equipe); setVal('equipe', equipe);
+  setPct('lm', lm_pct);  setVal('lm', lm_pct);
+  setPct('mv', mv_pct);  setVal('mv', mv_pct);
+  setVal('lcm', lcm_in);
+  setPct('edu', edu_pct); setVal('edu', edu_pct);
+  setPct('fundo', fundo); setVal('fundo', fundo);
 
-  // Valores calculados
-  const vals = {
-    consolidador: consol, gestao, opex, internalizado: interal,
-    equipe, lm: lm_pct, mv: mv_pct, lcm: lcm_pct, edu: edu_pct, fundo: fundo_pct
-  };
-
-  Object.entries(vals).forEach(([id, pct]) => {
-    if (el(`cr-${id}-val`)) el(`cr-${id}-val`).textContent = fmtMoney(redesa * pct);
-    if (el(`cr-${id}-pct`)) el(`cr-${id}-pct`).textContent = (pct*100).toFixed(2) + '%';
-  });
-
-  // Tarefas
-  if (el('cr-sql_abertura-val'))    el('cr-sql_abertura-val').textContent    = fmtMoney(redesa * sql_ab);
-  if (el('cr-r1_participacao-val')) el('cr-r1_participacao-val').textContent = fmtMoney(redesa * r1_part);
-  if (el('cr-distribuicao-val'))    el('cr-distribuicao-val').textContent    = fmtMoney(redesa * distrib);
-
-  // Total
   const total = apres + consol + gestao + opex + interal + equipe;
   if (el('cr-total-pct')) {
     el('cr-total-pct').textContent = (total*100).toFixed(2) + '%';
