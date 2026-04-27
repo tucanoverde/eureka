@@ -4409,40 +4409,42 @@ function renderConfiguracoes() {
       <!-- Calculadora de Remuneração -->
       <div id="calc-remuneracao" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1.25rem;margin-bottom:1rem;">
 
-        <!-- Linha 1: Base de cálculo -->
+        <!-- Header: Forecast → Impostos → Redesa -->
         <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;margin-bottom:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center;">
           <div>
             <div style="font-size:.75rem;opacity:.8;">Forecast Ajustado (pipeline)</div>
             <div id="cr-forecast" style="font-size:1.3rem;font-weight:700;">—</div>
           </div>
           <div>
-            <div style="font-size:.75rem;opacity:.8;">Impostos</div>
-            <div style="display:flex;align-items:center;justify-content:center;gap:.5rem;">
-              <input type="number" id="cr-impostos" step="0.01" min="0" max="100" value="${((state.configuracoes.remuneracao||{}).impostos||3.18)}"
-                style="width:70px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);border-radius:3px;color:#fff;font:inherit;font-size:.9rem;text-align:center;padding:2px 6px;">
-              <span style="font-size:.8rem;opacity:.8;">%</span>
+            <div style="font-size:.75rem;opacity:.8;margin-bottom:.25rem;">Impostos (%)</div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:.4rem;">
+              <input type="number" id="cr-impostos" step="0.01" min="0" max="100"
+                value="${((state.configuracoes.remuneracao||{}).impostos||3.18)}"
+                style="width:65px;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);border-radius:3px;color:#fff;font:inherit;font-size:.95rem;font-weight:700;text-align:center;padding:3px 6px;">
+              <span style="opacity:.8;">%</span>
             </div>
           </div>
           <div>
-            <div style="font-size:.75rem;opacity:.8;">Faturamento Redesa</div>
+            <div style="font-size:.75rem;opacity:.8;">Faturamento Redesa (50%)</div>
             <div id="cr-redesa" style="font-size:1.3rem;font-weight:700;">—</div>
           </div>
         </div>
 
-        <!-- Papéis principais -->
+        <!-- Tarefas do Apresentador (inputs editáveis) -->
         <div style="margin-bottom:1rem;">
-          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">Distribuição do Faturamento Redesa</div>
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.75rem;margin-bottom:.75rem;">
+          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">
+            Tarefas do Apresentador
+            <span style="font-weight:400;color:var(--ink-faint);">(soma = % Apresentador)</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;">
             ${[
-              ['apresentador', 'Apresentador', 20],
-              ['consolidador', 'Consolidador', 0],
-              ['gestao', 'Gestão Comercial', 10],
-              ['opex', 'OPEX', 10],
-              ['internalizado', 'Internalizado', 25],
-            ].map(([id, label, def]) => `
+              ['sql_abertura','Abertura SQL (%)',4],
+              ['r1_participacao','R1 Participação (%)',4],
+              ['distribuicao','Distribuição (%)',12],
+            ].map(([id,label,def]) => `
               <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.75rem;text-align:center;">
-                <div style="font-size:.7rem;color:var(--blue);font-weight:600;margin-bottom:.4rem;">${label}</div>
-                <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+                <div style="font-size:.72rem;color:var(--blue);font-weight:600;margin-bottom:.4rem;">${label}</div>
+                <div style="display:flex;align-items:center;justify-content:center;gap:3px;">
                   <input type="number" id="cr-${id}" step="0.5" min="0" max="100"
                     value="${((state.configuracoes.remuneracao||{})[id])||def}"
                     style="width:55px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:1rem;font-weight:700;text-align:center;padding:2px 4px;color:var(--blue);">
@@ -4452,64 +4454,102 @@ function renderConfiguracoes() {
               </div>
             `).join('')}
           </div>
+        </div>
 
-          <!-- Equipe (subdividida) -->
-          <div style="background:var(--gold-soft);border:2px solid var(--gold);border-radius:6px;padding:.75rem;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
-              <span style="font-size:.75rem;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Equipe</span>
-              <span id="cr-equipe-val" style="font-size:.9rem;font-weight:700;color:var(--gold);">—</span>
+        <!-- Distribuição principal -->
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">
+            Distribuição do Redesa
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:.6rem;">
+
+            <!-- Apresentador (calculado) -->
+            <div style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--ink-dim);font-weight:600;margin-bottom:.3rem;">Apresentador</div>
+              <div id="cr-apresentador-pct" style="font-size:.95rem;font-weight:700;color:var(--accent);">—</div>
+              <div id="cr-apresentador-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+              <div style="font-size:.65rem;color:var(--ink-faint);margin-top:2px;">calculado</div>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;">
-              ${[
-                ['lm', 'LM', 8.75],
-                ['mv', 'MV', 8.75],
-                ['lcm', 'LCM', 6],
-                ['edu', 'Edu', 8.75],
-                ['fundo', 'Fundo Res.', 2.75],
-              ].map(([id, label, def]) => `
-                <div style="background:white;border:1px solid var(--gold);border-radius:4px;padding:.5rem;text-align:center;">
-                  <div style="font-size:.7rem;color:var(--gold);font-weight:600;margin-bottom:.3rem;">${label}</div>
-                  <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-                    <input type="number" id="cr-${id}" step="0.25" min="0" max="100"
-                      value="${((state.configuracoes.remuneracao||{})[id])||def}"
-                      style="width:50px;background:transparent;border:none;font:inherit;font-size:.9rem;font-weight:700;text-align:center;color:var(--gold);">
-                    <span style="font-size:.75rem;color:var(--gold);">%</span>
-                  </div>
-                  <div id="cr-${id}-val" style="font-size:.75rem;color:var(--ink-dim);margin-top:.2rem;">—</div>
-                </div>
-              `).join('')}
+
+            <!-- Consolidador (editável) -->
+            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Consolidador</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+                <input type="number" id="cr-consolidador" step="0.5" min="0" max="100"
+                  value="${((state.configuracoes.remuneracao||{}).consolidador)||0}"
+                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
+                <span style="font-size:.75rem;color:var(--blue);">%</span>
+              </div>
+              <div id="cr-consolidador-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
             </div>
+
+            <!-- Gestão (editável) -->
+            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Gestão Comercial</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+                <input type="number" id="cr-gestao" step="0.5" min="0" max="100"
+                  value="${((state.configuracoes.remuneracao||{}).gestao)||10}"
+                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
+                <span style="font-size:.75rem;color:var(--blue);">%</span>
+              </div>
+              <div id="cr-gestao-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+            </div>
+
+            <!-- OPEX (editável) -->
+            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">OPEX</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+                <input type="number" id="cr-opex" step="0.5" min="0" max="100"
+                  value="${((state.configuracoes.remuneracao||{}).opex)||10}"
+                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
+                <span style="font-size:.75rem;color:var(--blue);">%</span>
+              </div>
+              <div id="cr-opex-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+            </div>
+
+            <!-- Internalizado (editável) -->
+            <div style="background:var(--blue-soft);border:2px solid var(--blue);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--blue);font-weight:600;margin-bottom:.3rem;">Internalizado</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+                <input type="number" id="cr-internalizado" step="0.5" min="0" max="100"
+                  value="${((state.configuracoes.remuneracao||{}).internalizado)||25}"
+                  style="width:45px;background:white;border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:1px 3px;color:var(--blue);">
+                <span style="font-size:.75rem;color:var(--blue);">%</span>
+              </div>
+              <div id="cr-internalizado-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+            </div>
+
+            <!-- Equipe (calculado = resíduo) -->
+            <div style="background:var(--gold-soft);border:2px solid var(--gold);border-radius:6px;padding:.6rem;text-align:center;">
+              <div style="font-size:.68rem;color:var(--gold);font-weight:600;margin-bottom:.3rem;">Equipe</div>
+              <div id="cr-equipe-pct" style="font-size:.95rem;font-weight:700;color:var(--gold);">—</div>
+              <div id="cr-equipe-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+              <div style="font-size:.65rem;color:var(--ink-faint);margin-top:2px;">resíduo</div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Subdivisão da equipe (todos calculados) -->
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.75rem;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">Equipe — subdivisão (calculado automaticamente)</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;">
+            ${['lm','mv','lcm','edu','fundo'].map((id,i) => `
+              <div style="background:var(--gold-soft);border:1px solid var(--gold);border-radius:4px;padding:.5rem;text-align:center;">
+                <div style="font-size:.7rem;color:var(--gold);font-weight:600;">${['LM','MV','LCM','Edu','Fundo Res.'][i]}</div>
+                <div id="cr-${id}-pct" style="font-size:.85rem;font-weight:700;color:var(--gold);margin:.2rem 0;">—</div>
+                <div id="cr-${id}-val" style="font-size:.75rem;color:var(--ink-dim);">—</div>
+              </div>
+            `).join('')}
           </div>
         </div>
 
         <!-- Totalizador -->
-        <div id="cr-total-bar" style="background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.75rem;display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.75rem;display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:.8rem;color:var(--ink-dim);">Total distribuído:</span>
-          <span id="cr-total-pct" style="font-weight:700;font-size:1rem;">—%</span>
+          <span id="cr-total-pct" style="font-weight:700;font-size:1rem;">—</span>
           <span id="cr-total-val" style="font-weight:700;color:var(--accent);">—</span>
-        </div>
-
-        <!-- Tarefas por etapa -->
-        <div style="margin-top:1rem;">
-          <div style="font-size:.75rem;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;font-family:JetBrains Mono,monospace;">Distribuição por Etapa Comercial</div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">
-            ${[
-              ['sql_abertura', 'Abertura SQL (%)', 4],
-              ['r1_participacao', 'R1 Participação (%)', 4],
-              ['distribuicao', 'Distribuição (%)', 12],
-            ].map(([id, label, def]) => `
-              <div style="background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.6rem;">
-                <div style="font-size:.7rem;color:var(--ink-dim);margin-bottom:.3rem;">${label}</div>
-                <div style="display:flex;align-items:center;gap:4px;">
-                  <input type="number" id="cr-${id}" step="0.5" min="0" max="100"
-                    value="${((state.configuracoes.remuneracao||{})[id])||def}"
-                    style="width:60px;background:var(--blue-soft);border:1px solid var(--blue);border-radius:3px;font:inherit;font-size:.9rem;font-weight:700;text-align:center;padding:2px 4px;color:var(--blue);">
-                  <span style="font-size:.75rem;color:var(--ink-dim);">% do Redesa</span>
-                  <span id="cr-${id}-val" style="margin-left:auto;font-size:.8rem;font-weight:600;color:var(--accent);">—</span>
-                </div>
-              </div>
-            `).join('')}
-          </div>
+          <span style="font-size:.75rem;color:var(--ink-faint);">deve somar 100%</span>
         </div>
 
       </div>
@@ -4778,61 +4818,73 @@ function calcularRemuneracao() {
 }
 
 function calcularRemuneracao() {
-  // Buscar forecast atual do pipeline
+  const el = (id) => document.getElementById(id);
+  if (!el('cr-forecast')) return;
+
+  // Forecast do pipeline ativo
   const _cfg_p = state.configuracoes.pesos_forecast || {};
   const PESOS = { SQL: _cfg_p.sql||0.25, R1: _cfg_p.r1||0.30, R2: _cfg_p.r2||0.40, R3: _cfg_p.r3||0.50, Licitacao: _cfg_p.licitacao||0.85 };
   const ativos = state.municipios.filter(m => Object.keys(PESOS).includes(m.status));
   const forecast = ativos.reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500) * (PESOS[m.status]||0.25), 0);
 
-  const impostos_pct = parseFloat(document.getElementById('cr-impostos')?.value || 3.18) / 100;
+  const impostos_pct = parseFloat(el('cr-impostos')?.value || 3.18) / 100;
   const recLiq = forecast * (1 - impostos_pct);
   const redesa = recLiq * 0.5;
 
-  // Atualizar header
-  const el = (id) => document.getElementById(id);
-  if (el('cr-forecast')) el('cr-forecast').textContent = fmtMoney(forecast);
-  if (el('cr-redesa')) el('cr-redesa').textContent = fmtMoney(redesa);
+  el('cr-forecast').textContent = fmtMoney(forecast);
+  el('cr-redesa').textContent = fmtMoney(redesa);
 
-  // Papéis principais
-  const papeis = ['apresentador','consolidador','gestao','opex','internalizado'];
-  let totalPct = 0;
-  let totalVal = 0;
-  papeis.forEach(p => {
-    const pct = parseFloat(el(`cr-${p}`)?.value || 0) / 100;
-    const val = redesa * pct;
-    totalPct += pct * 100;
-    totalVal += val;
-    if (el(`cr-${p}-val`)) el(`cr-${p}-val`).textContent = fmtMoney(val);
+  // Inputs editáveis (% do Redesa)
+  const sql_ab  = parseFloat(el('cr-sql_abertura')?.value  || 4)  / 100;
+  const r1_part = parseFloat(el('cr-r1_participacao')?.value || 4) / 100;
+  const distrib = parseFloat(el('cr-distribuicao')?.value  || 12) / 100;
+  const opex    = parseFloat(el('cr-opex')?.value          || 10) / 100;
+  const interal = parseFloat(el('cr-internalizado')?.value || 25) / 100;
+  const consol  = parseFloat(el('cr-consolidador')?.value  || 0)  / 100;
+
+  // Apresentador = soma das tarefas
+  const apres = sql_ab + r1_part + distrib;
+
+  // Equipe = resíduo (1 - todos os outros)
+  const gestao = parseFloat(el('cr-gestao')?.value || 10) / 100;
+  const equipe = 1 - (apres + consol + gestao + opex + interal);
+
+  // Subdivisão da equipe
+  const lcm_pct   = (10/100) - sql_ab;   // 10% - Abertura SQL
+  const lm_pct    = equipe / 4;
+  const mv_pct    = equipe / 4;
+  const edu_pct   = equipe / 4;
+  const fundo_pct = equipe - lcm_pct - lm_pct - mv_pct - edu_pct;
+
+  // Atualizar display do Apresentador
+  if (el('cr-apresentador-display')) {
+    el('cr-apresentador-display').textContent = (apres*100).toFixed(2) + '%';
+  }
+  if (el('cr-apresentador-val')) el('cr-apresentador-val').textContent = fmtMoney(redesa * apres);
+
+  // Valores calculados
+  const vals = {
+    consolidador: consol, gestao, opex, internalizado: interal,
+    equipe, lm: lm_pct, mv: mv_pct, lcm: lcm_pct, edu: edu_pct, fundo: fundo_pct
+  };
+
+  Object.entries(vals).forEach(([id, pct]) => {
+    if (el(`cr-${id}-val`)) el(`cr-${id}-val`).textContent = fmtMoney(redesa * pct);
+    if (el(`cr-${id}-pct`)) el(`cr-${id}-pct`).textContent = (pct*100).toFixed(2) + '%';
   });
 
-  // Equipe (subdividida)
-  const equipe_ids = ['lm','mv','lcm','edu','fundo'];
-  let equipePct = 0;
-  let equipeVal = 0;
-  equipe_ids.forEach(id => {
-    const pct = parseFloat(el(`cr-${id}`)?.value || 0) / 100;
-    const val = redesa * pct;
-    equipePct += pct * 100;
-    equipeVal += val;
-    totalPct += pct * 100;
-    totalVal += val;
-    if (el(`cr-${id}-val`)) el(`cr-${id}-val`).textContent = fmtMoney(val);
-  });
-  if (el('cr-equipe-val')) el('cr-equipe-val').textContent = fmtMoney(equipeVal);
-
-  // Tarefas por etapa
-  ['sql_abertura','r1_participacao','distribuicao'].forEach(id => {
-    const pct = parseFloat(el(`cr-${id}`)?.value || 0) / 100;
-    const val = redesa * pct;
-    if (el(`cr-${id}-val`)) el(`cr-${id}-val`).textContent = fmtMoney(val);
-  });
+  // Tarefas
+  if (el('cr-sql_abertura-val'))    el('cr-sql_abertura-val').textContent    = fmtMoney(redesa * sql_ab);
+  if (el('cr-r1_participacao-val')) el('cr-r1_participacao-val').textContent = fmtMoney(redesa * r1_part);
+  if (el('cr-distribuicao-val'))    el('cr-distribuicao-val').textContent    = fmtMoney(redesa * distrib);
 
   // Total
+  const total = apres + consol + gestao + opex + interal + equipe;
   if (el('cr-total-pct')) {
-    el('cr-total-pct').textContent = totalPct.toFixed(2) + '%';
-    el('cr-total-pct').style.color = Math.abs(totalPct - 100) < 0.1 ? 'var(--accent)' : 'var(--danger)';
+    el('cr-total-pct').textContent = (total*100).toFixed(2) + '%';
+    el('cr-total-pct').style.color = Math.abs(total - 1) < 0.001 ? 'var(--accent)' : 'var(--danger)';
   }
-  if (el('cr-total-val')) el('cr-total-val').textContent = fmtMoney(totalVal);
+  if (el('cr-total-val')) el('cr-total-val').textContent = fmtMoney(redesa * total);
 }
 
 function iniciarCalculadoraRemuneracao() {
