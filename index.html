@@ -1003,6 +1003,20 @@ const SUPABASE_URL = 'https://xwuydwdavzsazinsmibw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_54ptZzAI_pwtyBt89MFE7w_yK503nnp';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Normaliza peso do banco (pode estar em decimal 0.25 ou % 25) para decimal
+function normPeso(v, def) {
+  const val = parseFloat(v);
+  if (isNaN(val) || val === 0) return def;
+  return val > 1 ? val / 100 : val;
+}
+
+// Normaliza valor de peso para exibição em % (evita double-multiply)
+function toDisplayPct(v, def) {
+  const val = parseFloat(v);
+  if (isNaN(val)) return (def * 100).toFixed(2);
+  return (val > 1 ? val : val * 100).toFixed(2);
+}
+
 // ============================================================
 // ENGINE DE CÁLCULO — fonte única de verdade
 // Replica EXATAMENTE as fórmulas da planilha Excel
@@ -1032,18 +1046,18 @@ function getCfg() {
     conv_real:  (c.cenarios_conversao||{}).realista     || 0.50,
     conv_cons:  (c.cenarios_conversao||{}).conservador  || 0.25,
     // Pesos por etapa
-    p_sql:  parseFloat(pf.sql      || PESOS_ETAPA_DEFAULT.SQL),
-    p_r1:   parseFloat(pf.r1       || PESOS_ETAPA_DEFAULT.R1),
-    p_r2:   parseFloat(pf.r2       || PESOS_ETAPA_DEFAULT.R2),
-    p_r3:   parseFloat(pf.r3       || PESOS_ETAPA_DEFAULT.R3),
-    p_lic:  parseFloat(pf.licitacao|| PESOS_ETAPA_DEFAULT.Licitacao),
-    p_emp:  parseFloat(pf.empenho  || PESOS_ETAPA_DEFAULT.Empenho),
-    p_ent:  parseFloat(pf.entrega  || PESOS_ETAPA_DEFAULT.Entrega),
-    p_win:  parseFloat(pf.win      || PESOS_ETAPA_DEFAULT.Win),
+    p_sql:  normPeso(pf.sql,       PESOS_ETAPA_DEFAULT.SQL),
+    p_r1:   normPeso(pf.r1,        PESOS_ETAPA_DEFAULT.R1),
+    p_r2:   normPeso(pf.r2,        PESOS_ETAPA_DEFAULT.R2),
+    p_r3:   normPeso(pf.r3,        PESOS_ETAPA_DEFAULT.R3),
+    p_lic:  normPeso(pf.licitacao, PESOS_ETAPA_DEFAULT.Licitacao),
+    p_emp:  normPeso(pf.empenho,   PESOS_ETAPA_DEFAULT.Empenho),
+    p_ent:  normPeso(pf.entrega,   PESOS_ETAPA_DEFAULT.Entrega),
+    p_win:  normPeso(pf.win,       PESOS_ETAPA_DEFAULT.Win),
     // Pesos por farol
-    f_q:    parseFloat(ff.quente   || PESOS_FAROL_DEFAULT.Q),
-    f_m:    parseFloat(ff.morno    || PESOS_FAROL_DEFAULT.M),
-    f_f:    parseFloat(ff.frio     || PESOS_FAROL_DEFAULT.F),
+    f_q:    normPeso(ff.quente,    PESOS_FAROL_DEFAULT.Q),
+    f_m:    normPeso(ff.morno,     PESOS_FAROL_DEFAULT.M),
+    f_f:    normPeso(ff.frio,      PESOS_FAROL_DEFAULT.F),
   };
 }
 
@@ -2784,60 +2798,121 @@ function exportarCSV() {
 function renderHealth() {
   const cfg = getCfg();
   const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
-
-  // Forecast ajustado = Health!A24 = SUM(K27:K503)
   const forecastAjustado = calcForecastAjustado(state.municipios, cfg);
-
-  // Tempo médio por farol (M7, M10, M13)
   const tmFarol = calcTempoMedioFarol(state.municipios);
-
-  // Cenários globais (Health!B2:B4)
   const cenGlobal = calcCenarios(forecastAjustado, cfg);
 
-  // Por farol — receita ajustada
-  const recFarol = (f) => ativos
-    .filter(m => m.farol === f)
-    .reduce((s, m) => s + calcReceitaAjustada(m, cfg), 0);
+  const recFarol = (f) => ativos.filter(m => m.farol === f).reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
+  const recQ = recFarol('Q'), recM = recFarol('M'), recF = recFarol('F');
 
-  const recQ = recFarol('Q');
-  const recM = recFarol('M');
-  const recF = recFarol('F');
-
-  // Cenários por farol (Health!C7:C15)
-  const cenFarol = (rec) => calcCenarios(rec, cfg);
-
-  // Contagem e alunos por farol
   const infoFarol = (f) => {
     const muns = ativos.filter(m => m.farol === f);
-    const alunos = muns.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
-    const tempoMedio = tmFarol[f] || 0;
-    return { count: muns.length, alunos, tempoMedio };
+    return {
+      count: muns.length,
+      alunos: muns.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0),
+      tempoMedio: tmFarol[f] || 0
+    };
   };
 
-  // Distribuição forecast por etapa (Health!A19:N21)
   const porEtapa = ETAPAS_ATIVAS.map(e => {
     const muns = ativos.filter(m => m.status === e);
-    const rec = muns.reduce((s,m) => s + calcReceita(m, cfg), 0);
+    const rec  = muns.reduce((s,m) => s + calcReceita(m, cfg), 0);
     const fore = muns.reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
-    // Tempo médio por etapa
     const hoje = new Date();
     const tempos = muns.map(m => {
-      const dataEtapa = {
-        SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
-        R3: m.data_r3, Licitacao: m.data_licitacao,
-        Empenho: m.data_licitacao, Entrega: m.data_licitacao
-      }[m.status];
-      if (!dataEtapa) return m.tempo_na_etapa || 0;
-      return Math.floor((hoje - new Date(dataEtapa)) / 86400000);
+      const d = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+      return d ? Math.floor((hoje - new Date(d)) / 86400000) : (m.tempo_na_etapa || 0);
     }).filter(t => t > 0);
     const tempoMedio = tempos.length > 0 ? tempos.reduce((a,b)=>a+b,0)/tempos.length : 0;
     return { etapa: e, count: muns.length, rec, fore, tempoMedio };
   });
 
+  // Gerar HTML dos cenários globais
+  let htmlCenGlobal = '';
+  ['agressivo','realista','conservador'].forEach(c => {
+    const cn = cenGlobal[c];
+    const conv = { agressivo: cfg.conv_agr, realista: cfg.conv_real, conservador: cfg.conv_cons }[c];
+    htmlCenGlobal += `
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:.75rem;color:var(--accent);text-transform:capitalize;">${c}
+          <span style="font-weight:400;font-size:.75rem;color:var(--ink-dim);">(${(conv*100).toFixed(0)}% conversão)</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.8rem;">
+          <div style="color:var(--ink-dim);">Receita</div>
+          <div style="text-align:right;font-weight:600;">${fmtMoney(cn.receita)}</div>
+          <div style="color:var(--ink-dim);">Receita Líquida</div>
+          <div style="text-align:right;">${fmtMoney(cn.recLiq)}</div>
+          <div style="color:var(--ink-dim);font-weight:600;border-top:1px solid var(--line);padding-top:.4rem;">Fat. Redesa</div>
+          <div style="text-align:right;font-weight:700;color:var(--accent);border-top:1px solid var(--line);padding-top:.4rem;">${fmtMoney(cn.redesa)}</div>
+        </div>
+      </div>`;
+  });
+
+  // Gerar HTML dos cenários por farol
   const farolLabel = { Q:'Quente', M:'Morno', F:'Frio' };
   const farolCor   = { Q:'var(--danger)', M:'var(--warn)', F:'var(--blue)' };
+  let htmlFarol = '';
+  ['Q','M','F'].forEach(f => {
+    const info = infoFarol(f);
+    const rec = { Q: recQ, M: recM, F: recF }[f];
+    const cens = calcCenarios(rec, cfg);
+    let htmlCensFarol = '';
+    ['agressivo','realista','conservador'].forEach(c => {
+      const cn = cens[c];
+      htmlCensFarol += `
+        <div style="background:var(--bg);border-radius:4px;padding:.6rem;">
+          <div style="font-size:.7rem;font-weight:600;color:var(--ink-dim);margin-bottom:.4rem;text-transform:capitalize;">${c}</div>
+          <div style="font-size:.85rem;font-weight:700;">${fmtMoney(cn.receita)}</div>
+          <div style="font-size:.7rem;color:var(--accent);">Redesa: ${fmtMoney(cn.redesa)}</div>
+        </div>`;
+    });
+    htmlFarol += `
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+          <span style="font-weight:700;font-size:.95rem;color:${farolCor[f]};">${farolLabel[f]}</span>
+          <span style="font-size:.75rem;color:var(--ink-dim);">${info.count} mun · ${fmtNum(info.alunos)} alunos · ${info.tempoMedio.toFixed(0)}d médio</span>
+        </div>
+        ${info.count === 0
+          ? '<div style="color:var(--ink-faint);font-size:.8rem;text-align:center;padding:1rem;">Sem municípios</div>'
+          : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">' + htmlCensFarol + '</div>'
+        }
+      </div>`;
+  });
 
-  document.getElementById('pageContent').innerHTML = \`
+  // Gerar HTML da tabela por etapa
+  let htmlEtapas = '';
+  porEtapa.forEach(e => {
+    const cenE = calcCenarios(e.fore, cfg);
+    htmlEtapas += `
+      <tr>
+        <td style="font-weight:700;color:var(--accent);">${e.etapa === 'Licitacao' ? 'Licitação' : e.etapa}</td>
+        <td class="num">${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%</td>
+        <td class="num">${e.count}</td>
+        <td class="num">${fmtMoney(e.rec)}</td>
+        <td class="num" style="font-weight:600;">${fmtMoney(e.fore)}</td>
+        <td class="num">${fmtMoney(cenE.agressivo.redesa)}</td>
+        <td class="num">${e.tempoMedio.toFixed(1)}d</td>
+      </tr>`;
+  });
+  const totalRec  = porEtapa.reduce((s,e)=>s+e.rec,0);
+  const tmGlobal  = (tmFarol.Q + tmFarol.M + tmFarol.F) / 3;
+  htmlEtapas += `
+    <tr style="background:var(--accent-soft);font-weight:700;">
+      <td>TOTAL</td><td class="num">—</td>
+      <td class="num">${ativos.length}</td>
+      <td class="num">${fmtMoney(totalRec)}</td>
+      <td class="num">${fmtMoney(forecastAjustado)}</td>
+      <td class="num">${fmtMoney(cenGlobal.agressivo.redesa)}</td>
+      <td class="num">${tmGlobal > 0 ? tmGlobal.toFixed(1)+'d' : '—'}</td>
+    </tr>`;
+
+  // Pesos configuráveis
+  let htmlPesos = '';
+  ETAPAS_ATIVAS.forEach(e => {
+    htmlPesos += `<span style="font-size:.8rem;"><span style="font-weight:600;color:var(--accent);">${e==='Licitacao'?'Licitação':e}</span><span style="color:var(--ink-dim);"> = ${(getPesoEtapa(e,cfg)*100).toFixed(2)}%</span></span>`;
+  });
+
+  document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <div class="heading">
         <div class="crumb">Comercial · Financeiro</div>
@@ -2845,150 +2920,63 @@ function renderHealth() {
       </div>
       <div class="actions">
         <span style="font-size:.8rem;color:var(--ink-dim);">
-          \${ativos.length} municípios ativos · Impostos \${(cfg.impostos*100).toFixed(2)}% · Redesa \${(cfg.redesa*100).toFixed(0)}%
+          ${ativos.length} municípios ativos · Impostos ${(cfg.impostos*100).toFixed(2)}% · Redesa ${(cfg.redesa*100).toFixed(0)}%
         </span>
       </div>
     </div>
     <div class="page-body">
 
-      <!-- Forecast Ajustado = Health!A24 -->
       <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1.25rem;margin-bottom:1.5rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
         <div>
           <div style="font-size:.75rem;opacity:.8;">Receita Forecast Ajustado (Health!A24)</div>
-          <div style="font-size:1.4rem;font-weight:700;">\${fmtMoney(forecastAjustado)}</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAjustado)}</div>
         </div>
         <div>
           <div style="font-size:.75rem;opacity:.8;">Receita Líquida</div>
-          <div style="font-size:1.4rem;font-weight:700;">\${fmtMoney(cenGlobal.agressivo.recLiq)}</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(cenGlobal.agressivo.recLiq)}</div>
         </div>
         <div>
           <div style="font-size:.75rem;opacity:.8;">Faturamento Redesa</div>
-          <div style="font-size:1.4rem;font-weight:700;">\${fmtMoney(cenGlobal.agressivo.redesa)}</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(cenGlobal.agressivo.redesa)}</div>
         </div>
       </div>
 
-      <!-- Cenários Globais -->
       <div style="margin-bottom:1.5rem;">
-        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Cenários Globais — Pipeline completo (\${ativos.length} municípios)</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-          \${['agressivo','realista','conservador'].map(c => {
-            const cn = cenGlobal[c];
-            const conv = { agressivo: cfg.conv_agr, realista: cfg.conv_real, conservador: cfg.conv_cons }[c];
-            return \`
-              <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-                <div style="font-weight:700;font-size:.95rem;margin-bottom:.75rem;color:var(--accent);text-transform:capitalize;">\${c}
-                  <span style="font-weight:400;font-size:.75rem;color:var(--ink-dim);">(\${(conv*100).toFixed(0)}% conversão)</span>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.8rem;">
-                  <div style="color:var(--ink-dim);">Receita</div>
-                  <div style="text-align:right;font-weight:600;">\${fmtMoney(cn.receita)}</div>
-                  <div style="color:var(--ink-dim);">Receita Líquida</div>
-                  <div style="text-align:right;">\${fmtMoney(cn.recLiq)}</div>
-                  <div style="color:var(--ink-dim);font-weight:600;border-top:1px solid var(--line);padding-top:.4rem;">Fat. Redesa</div>
-                  <div style="text-align:right;font-weight:700;color:var(--accent);border-top:1px solid var(--line);padding-top:.4rem;">\${fmtMoney(cn.redesa)}</div>
-                </div>
-              </div>
-            \`;
-          }).join('')}
-        </div>
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Cenários Globais — ${ativos.length} municípios ativos</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">${htmlCenGlobal}</div>
       </div>
 
-      <!-- Cenários por Farol -->
       <div style="margin-bottom:1.5rem;">
         <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Cenários Potencial Total por Farol</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-          \${['Q','M','F'].map(f => {
-            const info = infoFarol(f);
-            const rec = { Q: recQ, M: recM, F: recF }[f];
-            const cens = cenFarol(rec);
-            return \`
-              <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
-                  <span style="font-weight:700;font-size:.95rem;color:\${farolCor[f]};">\${farolLabel[f]}</span>
-                  <span style="font-size:.75rem;color:var(--ink-dim);">\${info.count} mun · \${fmtNum(info.alunos)} alunos · \${info.tempoMedio.toFixed(0)}d médio</span>
-                </div>
-                \${info.count === 0
-                  ? '<div style="color:var(--ink-faint);font-size:.8rem;text-align:center;padding:1rem;">Sem municípios</div>'
-                  : \`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">
-                    \${['agressivo','realista','conservador'].map(c => {
-                      const cn = cens[c];
-                      const conv = { agressivo: cfg.conv_agr, realista: cfg.conv_real, conservador: cfg.conv_cons }[c];
-                      return \`
-                        <div style="background:var(--bg);border-radius:4px;padding:.6rem;">
-                          <div style="font-size:.7rem;font-weight:600;color:var(--ink-dim);margin-bottom:.4rem;text-transform:capitalize;">\${c}</div>
-                          <div style="font-size:.85rem;font-weight:700;">\${fmtMoney(cn.receita)}</div>
-                          <div style="font-size:.7rem;color:var(--accent);">Redesa: \${fmtMoney(cn.redesa)}</div>
-                        </div>
-                      \`;
-                    }).join('')}
-                  </div>\`
-                }
-              </div>
-            \`;
-          }).join('')}
-        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">${htmlFarol}</div>
       </div>
 
-      <!-- Distribuição Forecast por Etapa -->
       <div style="margin-bottom:1.5rem;">
         <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Distribuição Forecast por Etapa</h2>
         <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
           <table class="data-table" style="font-size:.82rem;">
             <thead>
               <tr>
-                <th>Etapa</th>
-                <th class="num">Peso</th>
-                <th class="num">Municípios</th>
-                <th class="num">Receita Potencial</th>
-                <th class="num">Forecast (Ajustado)</th>
-                <th class="num">Fat. Redesa</th>
-                <th class="num">Tempo Médio</th>
+                <th>Etapa</th><th class="num">Peso</th><th class="num">Municípios</th>
+                <th class="num">Receita Potencial</th><th class="num">Forecast (Ajustado)</th>
+                <th class="num">Fat. Redesa</th><th class="num">Tempo Médio</th>
               </tr>
             </thead>
-            <tbody>
-              \${porEtapa.map(e => {
-                const cenE = calcCenarios(e.fore, cfg);
-                return \`
-                <tr>
-                  <td style="font-weight:700;color:var(--accent);">\${e.etapa === 'Licitacao' ? 'Licitação' : e.etapa}</td>
-                  <td class="num">\${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%</td>
-                  <td class="num">\${e.count}</td>
-                  <td class="num">\${fmtMoney(e.rec)}</td>
-                  <td class="num" style="font-weight:600;">\${fmtMoney(e.fore)}</td>
-                  <td class="num">\${fmtMoney(cenE.agressivo.redesa)}</td>
-                  <td class="num">\${e.tempoMedio.toFixed(1)}d</td>
-                </tr>\`;
-              }).join('')}
-              <tr style="background:var(--accent-soft);font-weight:700;">
-                <td>TOTAL</td>
-                <td class="num">—</td>
-                <td class="num">\${ativos.length}</td>
-                <td class="num">\${fmtMoney(porEtapa.reduce((s,e)=>s+e.rec,0))}</td>
-                <td class="num">\${fmtMoney(forecastAjustado)}</td>
-                <td class="num">\${fmtMoney(cenGlobal.agressivo.redesa)}</td>
-                <td class="num">\${tmFarol.Q > 0 ? ((tmFarol.Q+tmFarol.M+tmFarol.F)/3).toFixed(1)+'d' : '—'}</td>
-              </tr>
-            </tbody>
+            <tbody>${htmlEtapas}</tbody>
           </table>
         </div>
       </div>
 
-      <!-- Pesos de Forecast -->
       <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap;">
         <span style="font-size:.8rem;font-weight:600;color:var(--ink-dim);">Pesos (configuráveis):</span>
-        \${ETAPAS_ATIVAS.map(e => \`
-          <span style="font-size:.8rem;">
-            <span style="font-weight:600;color:var(--accent);">\${e==='Licitacao'?'Licitação':e}</span>
-            <span style="color:var(--ink-dim);"> = \${(getPesoEtapa(e,cfg)*100).toFixed(2)}%</span>
-          </span>
-        \`).join('')}
+        ${htmlPesos}
         <span style="margin-left:auto;font-size:.75rem;color:var(--ink-faint);">
-          Conversão: Agr=\${(cfg.conv_agr*100).toFixed(0)}% · Real=\${(cfg.conv_real*100).toFixed(0)}% · Cons=\${(cfg.conv_cons*100).toFixed(0)}%
+          Conv: Agr=${(cfg.conv_agr*100).toFixed(0)}% · Real=${(cfg.conv_real*100).toFixed(0)}% · Cons=${(cfg.conv_cons*100).toFixed(0)}%
         </span>
       </div>
 
     </div>
-  \`;
+  `;
 }
 
 
@@ -4479,22 +4467,22 @@ function renderConfiguracoes() {
       <div class="section-title">Pesos de Forecast por Etapa (%)</div>
       <div class="message">Probabilidade de conversão por etapa — replicado de Health!A17. Use 2 casas decimais.</div>
       <div class="form-grid">
-        <div class="field"><label>SQL (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${((state.configuracoes.pesos_forecast||{}).sql||0.25)*100}"></div>
-        <div class="field"><label>R1 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${((state.configuracoes.pesos_forecast||{}).r1||0.30)*100}"></div>
-        <div class="field"><label>R2 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${((state.configuracoes.pesos_forecast||{}).r2||0.40)*100}"></div>
-        <div class="field"><label>R3 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${((state.configuracoes.pesos_forecast||{}).r3||0.50)*100}"></div>
-        <div class="field"><label>Licitação (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${((state.configuracoes.pesos_forecast||{}).licitacao||0.85)*100}"></div>
-        <div class="field"><label>Empenho (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.empenho" value="${((state.configuracoes.pesos_forecast||{}).empenho||0.90)*100}"></div>
-        <div class="field"><label>Entrega (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.entrega" value="${((state.configuracoes.pesos_forecast||{}).entrega||0.95)*100}"></div>
-        <div class="field"><label>Win (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.win" value="${((state.configuracoes.pesos_forecast||{}).win||1.00)*100}"></div>
+        <div class="field"><label>SQL (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).sql, 0.25)}"></div>
+        <div class="field"><label>R1 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).r1, 0.30)}"></div>
+        <div class="field"><label>R2 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).r2, 0.40)}"></div>
+        <div class="field"><label>R3 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).r3, 0.50)}"></div>
+        <div class="field"><label>Licitação (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).licitacao, 0.85)}"></div>
+        <div class="field"><label>Empenho (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.empenho" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).empenho, 0.90)}"></div>
+        <div class="field"><label>Entrega (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.entrega" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).entrega, 0.95)}"></div>
+        <div class="field"><label>Win (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.win" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).win, 1.00)}"></div>
       </div>
 
       <div class="section-title">Pesos de Conversão por Farol (%)</div>
       <div class="message">Dashboard!M5:M7 — usados nos cenários por farol em todas as telas.</div>
       <div class="form-grid">
-        <div class="field"><label>🔴 Quente (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.quente" value="${((state.configuracoes.pesos_farol||{}).quente||0.30)*100}"></div>
-        <div class="field"><label>🟡 Morno (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.morno" value="${((state.configuracoes.pesos_farol||{}).morno||0.15)*100}"></div>
-        <div class="field"><label>🔵 Frio (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.frio" value="${((state.configuracoes.pesos_farol||{}).frio||0.05)*100}"></div>
+        <div class="field"><label>🔴 Quente (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.quente" value="${toDisplayPct((state.configuracoes.pesos_farol||{}).quente, 0.30)}"></div>
+        <div class="field"><label>🟡 Morno (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.morno" value="${toDisplayPct((state.configuracoes.pesos_farol||{}).morno, 0.15)}"></div>
+        <div class="field"><label>🔵 Frio (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.frio" value="${toDisplayPct((state.configuracoes.pesos_farol||{}).frio, 0.05)}"></div>
       </div>
 
       <div class="section-title">Modelo de Remuneração</div>
