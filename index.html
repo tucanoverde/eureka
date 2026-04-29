@@ -1656,28 +1656,48 @@ function renderDashboard() {
           `).join('')}
         </div>
         <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Top 10 · Melhor Score</h2>
-          ${todos.filter(m=>m.indicador_performance_ef!=null).sort((a,b)=>b.indicador_performance_ef-a.indicador_performance_ef).slice(0,10).map((m,i)=>`
-            <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
-              <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
-                <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-titulo">Top 10 · Maior Receita Potencial</h2>
+          <div id="top10-lista">
+            ${[...todos].sort((a,b)=>b.rec-a.rec).slice(0,10).map((m,i)=>`
+              <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
+                <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
+                  <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
+                </div>
+                <div style="font-size:.82rem;font-weight:600;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
+                ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
               </div>
-              <div style="display:flex;align-items:center;gap:.4rem;">
-                <span class="score-bar" style="width:50px;"><span class="score-bar-fill" style="transform:scaleX(${Math.min(parseFloat(m.indicador_performance_ef)||0,10)/10})"></span></span>
-                <span style="font-size:.82rem;font-weight:600;">${fmtNum(m.indicador_performance_ef,1)}</span>
-              </div>
-            </div>
-          `).join('')}
+            `).join('')}
+          </div>
         </div>
       </div>
 
     </div>
   `;
 
-  renderMapaBrasil(ufData);
-  document.getElementById('mapaUF').addEventListener('change', () => renderMapaBrasil(ufData));
+  renderMapaBrasil(ufData, todos);
+  document.getElementById('mapaUF').addEventListener('change', () => {
+    renderMapaBrasil(ufData, todos);
+    // Atualizar Top 10 pelo estado selecionado
+    const ufSel = document.getElementById('mapaUF').value;
+    const lista = document.getElementById('top10-lista');
+    const titulo = document.getElementById('top10-titulo');
+    if (!lista || !titulo) return;
+    const filtrado = ufSel ? todos.filter(m => m.uf === ufSel) : todos;
+    titulo.textContent = ufSel ? `Top 10 · Maior Receita em ${ufSel}` : 'Top 10 · Maior Receita Potencial';
+    lista.innerHTML = [...filtrado].sort((a,b)=>b.rec-a.rec).slice(0,10).map((m,i)=>`
+      <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
+        <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
+          <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
+        </div>
+        <div style="font-size:.82rem;font-weight:600;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
+        ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
+      </div>
+    `).join('');
+  });
 }
 
 // ============================================================
@@ -1686,12 +1706,41 @@ function renderDashboard() {
 let _leafletMap = null;
 let _leafletMarkers = null;
 
-async function renderMapaBrasil(ufData) {
+async function renderMapaBrasil(ufData, todos) {
   const container = document.getElementById('mapaContainer');
   const legenda = document.getElementById('mapaLegenda');
   if (!container) return;
 
   const filtroUF = document.getElementById('mapaUF')?.value || '';
+
+  // Mostrar TAM e receita do estado selecionado
+  if (legenda) {
+    if (filtroUF && ufData[filtroUF]) {
+      const d = ufData[filtroUF];
+      const tamRec = todos ? todos.filter(m => m.uf === filtroUF).reduce((s,m) => s+m.rec, 0) : d.receita;
+      legenda.innerHTML = `
+        <span style="font-weight:600;color:var(--accent);">${filtroUF}</span>
+        <span>· ${d.count} municípios</span>
+        <span>· TAM alunos: <strong>${fmtNum(d.alunos)}</strong></span>
+        <span>· Receita potencial: <strong>${fmtMoney(tamRec)}</strong></span>
+        <span>· Score médio: <strong>${d.score_medio.toFixed(2)}</strong></span>
+        ${d.pipeline > 0 ? `<span style="color:var(--accent);">· Pipeline: <strong>${d.pipeline}</strong></span>` : ''}
+      `;
+    } else {
+      const totalAlunos = Object.values(ufData).reduce((s,d) => s+d.alunos, 0);
+      const totalRec = todos ? todos.reduce((s,m) => s+m.rec, 0) : 0;
+      legenda.innerHTML = `
+        <span>Brasil consolidado</span>
+        <span>· TAM total: <strong>${fmtNum(totalAlunos)} alunos</strong></span>
+        <span>· Receita potencial: <strong>${fmtMoney(totalRec)}</strong></span>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:.5rem;">
+          <span style="display:inline-block;width:12px;height:12px;background:#1a7a3c;border-radius:2px;"></span>Score alto
+          <span style="display:inline-block;width:12px;height:12px;background:#7dc49a;border-radius:2px;margin-left:4px;"></span>Score médio
+          <span style="display:inline-block;width:12px;height:12px;background:#e0d8cc;border-radius:2px;margin-left:4px;"></span>Score baixo
+        </span>
+      `;
+    }
+  }
 
   // Cor por score
   function scoreColor(score) {
@@ -1725,8 +1774,8 @@ async function renderMapaBrasil(ufData) {
   }
 
   // Filtrar municípios com coordenadas
-  const todos = state.municipios.filter(m => m.latitude && m.longitude);
-  const municipios = filtroUF ? todos.filter(m => m.uf === filtroUF) : todos;
+  const munsMapa = state.municipios.filter(m => m.latitude && m.longitude);
+  const municipios = filtroUF ? munsMapa.filter(m => m.uf === filtroUF) : munsMapa;
 
   // Marcadores via Canvas (círculos leves)
   municipios.forEach(m => {
@@ -2984,60 +3033,135 @@ function renderHealth() {
 // PIPELINE TRACKING SEMANAL
 // ============================================================
 async function renderTracking() {
-  const trk = state.tracking;
+  const cfg = getCfg();
+  const { data: tracking } = await sb.from('pipeline_tracking').select('*').order('semana');
+  state.tracking = tracking || [];
 
-  // Calcular snapshot atual do pipeline
-  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
-  const _cfg_p = state.configuracoes.pesos_forecast || {}; const PESOS = { SQL: _cfg_p.sql||0.25, R1: _cfg_p.r1||0.30, R2: _cfg_p.r2||0.40, R3: _cfg_p.r3||0.50, Licitacao: _cfg_p.licitacao||0.85 };
-  const ativos = state.municipios.filter(m => ETAPAS.includes(m.status));
-  const receita_atual = ativos.reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500), 0);
-  const forecast_atual = ativos.reduce((s,m) => s + ((m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500) * (PESOS[m.status]||0.25), 0);
+  // Calcular estado atual do pipeline
+  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const forecastAtual = calcForecastAjustado(state.municipios, cfg);
+  const tmFarol = calcTempoMedioFarol(state.municipios);
 
-  // Última semana do tracking
-  const ultima = trk[trk.length - 1];
-  const penultima = trk[trk.length - 2];
-  const deltaReceita = ultima && penultima
-    ? ((ultima.receita_potencial - penultima.receita_potencial) / (penultima.receita_potencial||1) * 100).toFixed(1)
-    : '—';
+  // Eficiência atual = mediana de (receita_ajustada / dias_na_etapa)
+  const eficiencias = ativos
+    .map(m => {
+      const hoje = new Date();
+      const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao }[m.status];
+      const dias = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 1);
+      const rec = calcReceitaAjustada(m, cfg);
+      return dias > 0 ? rec / dias : 0;
+    })
+    .filter(e => e > 0)
+    .sort((a,b) => a-b);
+  const eficienciaAtual = eficiencias.length > 0 ? eficiencias[Math.floor(eficiencias.length/2)] : 0;
 
-  // Gráfico de barras simples com SVG inline
-  const maxReceita = Math.max(...trk.map(t => t.receita_potencial), 1);
-  const barWidth = 60;
-  const barGap = 20;
-  const chartH = 180;
-  const chartW = trk.length * (barWidth + barGap) + barGap;
+  // Ticket médio atual
+  const tickets = ativos.map(m => {
+    const alunos = (m.ef1_alunos||0) + (m.ef2_alunos||0);
+    return alunos > 0 ? calcReceita(m, cfg) / alunos : 0;
+  }).filter(t => t > 0).sort((a,b) => a-b);
+  const ticketAtual = tickets.length > 0 ? tickets[Math.floor(tickets.length/2)] : 0;
 
-  const bars = trk.map((t, i) => {
-    const h = Math.round((t.receita_potencial / maxReceita) * chartH * 0.85);
-    const x = barGap + i * (barWidth + barGap);
-    const y = chartH - h;
-    const isLast = i === trk.length - 1;
-    return `
-      <rect x="${x}" y="${y}" width="${barWidth}" height="${h}"
-        fill="${isLast ? 'var(--accent)' : 'var(--accent-soft)'}"
-        stroke="${isLast ? 'var(--accent-bright)' : 'var(--line)'}"
-        stroke-width="1" rx="3"/>
-      <text x="${x + barWidth/2}" y="${chartH + 16}" text-anchor="middle"
-        font-size="11" fill="var(--ink-dim)" font-family="Instrument Sans,sans-serif">${t.semana}</text>
-      <text x="${x + barWidth/2}" y="${y - 5}" text-anchor="middle"
-        font-size="10" fill="var(--ink-soft)" font-family="JetBrains Mono,monospace">
-        ${(t.receita_potencial/1000).toFixed(0)}k
-      </text>
-    `;
-  }).join('');
+  // Gargalo = etapa com mais municípios
+  const contEtapa = {};
+  ETAPAS_ATIVAS.forEach(e => { contEtapa[e] = ativos.filter(m => m.status === e).length; });
+  const gargalo = Object.entries(contEtapa).sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
 
-  // Linha de municípios
-  const maxMun = Math.max(...trk.map(t => t.municipios_count), 1);
-  const points = trk.map((t, i) => {
-    const x = barGap + i * (barWidth + barGap) + barWidth/2;
-    const y = chartH - Math.round((t.municipios_count / maxMun) * chartH * 0.7);
-    return `${x},${y}`;
-  }).join(' ');
+  // Dados da semana atual (snapshot)
+  const semanaAtual = {
+    receita_potencial: forecastAtual,
+    municipios_ativos: ativos.length,
+    eficiencia_dia: eficienciaAtual,
+    quente: ativos.filter(m => m.farol === 'Q').length,
+    medio: ativos.filter(m => m.farol === 'M' || m.farol === 'Mo').length,
+    morno: ativos.filter(m => m.farol === 'M').length,
+    sql: ativos.filter(m => m.status === 'SQL').length,
+    r1: ativos.filter(m => m.status === 'R1').length,
+    r2: ativos.filter(m => m.status === 'R2').length,
+    r3: ativos.filter(m => m.status === 'R3').length,
+    licitacao: ativos.filter(m => m.status === 'Licitacao').length,
+    velocity: tmFarol.Q > 0 ? parseFloat(((tmFarol.Q + tmFarol.M + tmFarol.F) / 3).toFixed(2)) : 0,
+    ticket_medio: ticketAtual,
+    gargalo,
+  };
+
+  // Última semana salva para delta
+  const ultimaSemana = state.tracking.length > 0 ? state.tracking[state.tracking.length - 1] : null;
+
+  // Delta de eficiência vs semana anterior
+  const deltaEfic = ultimaSemana && ultimaSemana.eficiencia_dia > 0
+    ? (eficienciaAtual - ultimaSemana.eficiencia_dia) / ultimaSemana.eficiencia_dia
+    : null;
+  const deltaReceita = ultimaSemana && ultimaSemana.receita_potencial > 0
+    ? (forecastAtual - ultimaSemana.receita_potencial) / ultimaSemana.receita_potencial
+    : null;
+
+  const fmtDelta = (d) => {
+    if (d === null) return '<span style="color:var(--ink-faint);">—</span>';
+    const cor = d >= 0 ? 'var(--accent)' : 'var(--danger)';
+    return `<span style="color:${cor};font-weight:600;">${d >= 0 ? '+' : ''}${(d*100).toFixed(1)}%</span>`;
+  };
+  const fmtDeltaVal = (d) => {
+    if (d === null) return '<span style="color:var(--ink-faint);">—</span>';
+    const cor = d >= 0 ? 'var(--accent)' : 'var(--danger)';
+    return `<span style="color:${cor};">${d >= 0 ? '+' : ''}${(d*100).toFixed(1)}%</span>`;
+  };
+
+  // Gráfico de barras
+  const allData = [...state.tracking, { semana: 'Atual', receita_potencial: forecastAtual, municipios_ativos: ativos.length }];
+  const maxRec = Math.max(...allData.map(t => t.receita_potencial || 0), 1);
+
+  let htmlBarras = '';
+  allData.forEach((t, i) => {
+    const isAtual = t.semana === 'Atual';
+    const pct = ((t.receita_potencial || 0) / maxRec * 100).toFixed(1);
+    const prev = i > 0 ? allData[i-1] : null;
+    const deltaR = prev && prev.receita_potencial > 0
+      ? ((t.receita_potencial - prev.receita_potencial) / prev.receita_potencial * 100).toFixed(1)
+      : null;
+    htmlBarras += `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+        <div style="font-size:.7rem;font-weight:600;">${fmtMoney(t.receita_potencial||0)}</div>
+        ${deltaR !== null ? `<div style="font-size:.65rem;color:${parseFloat(deltaR)>=0?'var(--accent)':'var(--danger)'};">${parseFloat(deltaR)>=0?'+':''}${deltaR}%</div>` : ''}
+        <div style="width:100%;background:var(--bg);border-radius:3px;height:80px;display:flex;align-items:flex-end;">
+          <div style="width:100%;height:${pct}%;background:${isAtual?'var(--accent)':'rgba(42,95,73,.35)'};border-radius:3px 3px 0 0;transition:height .4s;"></div>
+        </div>
+        <div style="font-size:.72rem;font-weight:${isAtual?'700':'400'};color:${isAtual?'var(--accent)':'var(--ink-dim)'};">${t.semana}</div>
+        <div style="font-size:.7rem;color:var(--ink-faint);">${t.municipios_ativos||0} mun</div>
+      </div>`;
+  });
+
+  // Tabela histórica
+  let htmlTabela = '';
+  state.tracking.forEach((t, i) => {
+    const prev = i > 0 ? state.tracking[i-1] : null;
+    const dRec = prev && prev.receita_potencial > 0 ? (t.receita_potencial - prev.receita_potencial) / prev.receita_potencial : null;
+    const dEfic = prev && prev.eficiencia_dia > 0 ? (t.eficiencia_dia - prev.eficiencia_dia) / prev.eficiencia_dia : null;
+    htmlTabela += `
+      <tr>
+        <td style="font-weight:700;">${t.semana}</td>
+        <td>${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
+        <td class="num">${fmtMoney(t.receita_potencial||0)}</td>
+        <td class="num">${fmtDeltaVal(dRec)}</td>
+        <td class="num">${t.municipios_ativos||0}</td>
+        <td class="num">${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia) : '—'}</td>
+        <td class="num">${fmtDeltaVal(dEfic)}</td>
+        <td class="num">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${(t.municipios_ativos||0)-(t.quente||0)-(t.morno||0)} 🔵</td>
+        <td class="num">${t.sql||0}</td>
+        <td class="num">${t.r1||0}</td>
+        <td class="num">${t.r2||0}</td>
+        <td class="num">${t.r3||0}</td>
+        <td class="num">${t.licitacao||0}</td>
+        <td class="num">${t.velocity > 0 ? t.velocity.toFixed(2)+'v' : '—'}</td>
+        <td class="num">${t.ticket_medio > 0 ? fmtMoney(t.ticket_medio) : '—'}</td>
+        <td>${escapeHtml(t.gargalo||'—')}</td>
+      </tr>`;
+  });
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
       <div class="heading">
-        <div class="crumb">Comercial · Evolução semanal</div>
+        <div class="crumb">Comercial · Evolução Semanal</div>
         <h1><em>Pipeline Tracking</em></h1>
       </div>
       <div class="actions">
@@ -3046,166 +3170,119 @@ async function renderTracking() {
     </div>
     <div class="page-body">
 
-      <!-- KPIs snapshot atual -->
-      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:1.5rem;">
-        <div class="kpi-card">
-          <div class="kpi-value">${fmtMoney(receita_atual)}</div>
-          <div class="kpi-label">Receita potencial atual</div>
+      <!-- KPIs atuais -->
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.5rem;">
+        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;">
+          <div style="font-size:.75rem;opacity:.8;">Receita Potencial Atual</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAtual)}</div>
+          <div style="font-size:.8rem;opacity:.8;">${fmtDelta(deltaReceita)} vs semana anterior</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${fmtMoney(forecast_atual)}</div>
-          <div class="kpi-label">Forecast ajustado atual</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.75rem;color:var(--ink-dim);">Forecast Ajustado Atual</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAtual)}</div>
+          <div style="font-size:.8rem;color:var(--ink-dim);">${ativos.length} municípios ativos</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-value" style="color:${parseFloat(deltaReceita)>=0?'var(--accent)':'var(--danger)'}">
-            ${deltaReceita !== '—' ? (parseFloat(deltaReceita)>=0?'+':'')+deltaReceita+'%' : '—'}
-          </div>
-          <div class="kpi-label">Δ Receita última semana</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.75rem;color:var(--ink-dim);">Δ Eficiência (R$/dia)</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(eficienciaAtual)}</div>
+          <div style="font-size:.8rem;">${fmtDelta(deltaEfic)} vs semana anterior</div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${ultima ? ultima.gargalo || '—' : '—'}</div>
-          <div class="kpi-label">Gargalo atual</div>
-        </div>
-      </div>
-
-      <!-- Gráfico evolução receita -->
-      <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;margin-bottom:1.5rem;">
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Evolução da Receita Potencial</h2>
-          ${trk.length === 0 ? '<div style="color:var(--ink-dim);font-size:.85rem;padding:2rem;text-align:center;">Sem dados ainda</div>' : `
-          <svg viewBox="0 0 ${chartW} ${chartH + 30}" width="100%" style="display:block;overflow:visible;">
-            ${bars}
-            <polyline points="${points}" fill="none" stroke="var(--warn)" stroke-width="2" stroke-dasharray="4,3" opacity="0.7"/>
-            ${trk.map((t,i) => {
-              const x = barGap + i*(barWidth+barGap)+barWidth/2;
-              const y = chartH - Math.round((t.municipios_count/maxMun)*chartH*0.7);
-              return `<circle cx="${x}" cy="${y}" r="4" fill="var(--warn)" opacity="0.8"/>`;
-            }).join('')}
-          </svg>
-          <div style="display:flex;gap:1.5rem;font-size:.75rem;color:var(--ink-dim);margin-top:.5rem;">
-            <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:12px;background:var(--accent-soft);border:1px solid var(--line);display:inline-block;border-radius:2px;"></span>Receita potencial</span>
-            <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:2px;background:var(--warn);display:inline-block;"></span>Municípios ativos</span>
-          </div>
-          `}
-        </div>
-
-        <!-- Métricas por semana -->
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Velocity & Ticket Médio</h2>
-          <div style="display:flex;flex-direction:column;gap:.6rem;">
-            ${trk.map(t => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem .6rem;background:var(--bg);border-radius:4px;">
-                <span style="font-weight:600;font-size:.8rem;color:var(--accent);">${t.semana}</span>
-                <span style="font-size:.75rem;color:var(--ink-dim);">${t.municipios_count} mun.</span>
-                <span style="font-size:.75rem;" title="Velocity">${(t.velocity||0).toFixed(2)}v</span>
-                <span style="font-size:.75rem;font-family:monospace;" title="Ticket médio">${fmtMoney(t.ticket_medio||0)}</span>
-                <span style="font-size:.7rem;color:var(--danger);font-weight:600;">${t.gargalo||'—'}</span>
-              </div>
-            `).join('')}
-          </div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.75rem;color:var(--ink-dim);">Gargalo Atual</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--warn);">${gargalo}</div>
+          <div style="font-size:.8rem;color:var(--ink-dim);">${contEtapa[gargalo]||0} municípios parados</div>
         </div>
       </div>
 
-      <!-- Tabela completa -->
+      <!-- Gráfico -->
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;margin-bottom:1.5rem;">
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Evolução da Receita Potencial</h2>
+        ${allData.length > 0
+          ? `<div style="display:flex;gap:.75rem;align-items:flex-end;height:160px;">${htmlBarras}</div>`
+          : '<div style="text-align:center;padding:2rem;color:var(--ink-dim);">Sem dados ainda</div>'
+        }
+      </div>
+
+      <!-- Tabela histórica -->
       <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
-        <table class="data-table" style="font-size:.8rem;">
-          <thead>
-            <tr>
-              <th>Semana</th>
-              <th>Data</th>
-              <th class="num">Receita</th>
-              <th class="num">Δ Receita</th>
-              <th class="num">Municípios</th>
-              <th class="num">Eficiência/dia</th>
-              <th class="num">🔴 Quente</th>
-              <th class="num">🟡 Médio</th>
-              <th class="num">🔵 Morno</th>
-              <th class="num">SQL</th>
-              <th class="num">R1</th>
-              <th class="num">R2</th>
-              <th class="num">R3</th>
-              <th class="num">Lic.</th>
-              <th class="num">Velocity</th>
-              <th class="num">Ticket</th>
-              <th>Gargalo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${trk.map((t, i) => {
-              const prev = trk[i-1];
-              const delta = prev ? ((t.receita_potencial - prev.receita_potencial)/(prev.receita_potencial||1)*100) : null;
-              return `
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
+          <h2 style="font-size:1rem;font-weight:600;">Histórico Semanal</h2>
+          <span style="font-size:.8rem;color:var(--ink-dim);">${state.tracking.length} semanas registradas</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" style="font-size:.78rem;min-width:1100px;">
+            <thead>
               <tr>
-                <td style="font-weight:700;color:var(--accent);">${t.semana}</td>
-                <td style="color:var(--ink-dim);font-size:.75rem;">${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
-                <td class="num">${fmtMoney(t.receita_potencial||0)}</td>
-                <td class="num" style="color:${delta===null?'var(--ink-dim)':delta>=0?'var(--accent)':'var(--danger)'}">
-                  ${delta===null ? '—' : (delta>=0?'+':'')+delta.toFixed(1)+'%'}
-                </td>
-                <td class="num">${t.municipios_count||0}</td>
-                <td class="num">${fmtMoney(t.eficiencia||0)}</td>
-                <td class="num">${t.quente||0}</td>
-                <td class="num">${t.medio||0}</td>
-                <td class="num">${t.morno||0}</td>
-                <td class="num">${t.sql_count||0}</td>
-                <td class="num">${t.r1_count||0}</td>
-                <td class="num">${t.r2_count||0}</td>
-                <td class="num">${t.r3_count||0}</td>
-                <td class="num">${t.licitacao_count||0}</td>
-                <td class="num">${(t.velocity||0).toFixed(2)}</td>
-                <td class="num">${fmtMoney(t.ticket_medio||0)}</td>
-                <td style="font-weight:600;color:var(--danger);">${t.gargalo||'—'}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
+                <th>Semana</th><th>Data</th>
+                <th class="num">Receita</th><th class="num">Δ Receita</th>
+                <th class="num">Municípios</th>
+                <th class="num">Efic. (R$/dia)</th><th class="num">Δ Eficiência</th>
+                <th class="num">Faróis</th>
+                <th class="num">SQL</th><th class="num">R1</th><th class="num">R2</th><th class="num">R3</th><th class="num">Lic.</th>
+                <th class="num">Velocity</th><th class="num">Ticket</th><th>Gargalo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${htmlTabela || '<tr><td colspan="16" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhuma semana registrada. Clique em "+ Registrar semana atual".</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       </div>
+
     </div>
   `;
 }
 
 async function registrarSemana() {
-  // Calcular snapshot atual automaticamente
-  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
-  const _cfg_p = state.configuracoes.pesos_forecast || {}; const PESOS = { SQL: _cfg_p.sql||0.25, R1: _cfg_p.r1||0.30, R2: _cfg_p.r2||0.40, R3: _cfg_p.r3||0.50, Licitacao: _cfg_p.licitacao||0.85 };
-  const ativos = state.municipios.filter(m => ETAPAS.includes(m.status));
-  
-  const receita = ativos.reduce((s,m) => s+(m.receita_potencial||(m.total_ef||0)*440),0);
-  const sql_c = ativos.filter(m=>m.status==='SQL').length;
-  const r1_c  = ativos.filter(m=>m.status==='R1').length;
-  const r2_c  = ativos.filter(m=>m.status==='R2').length;
-  const r3_c  = ativos.filter(m=>m.status==='R3').length;
-  const lic_c = ativos.filter(m=>m.status==='Licitacao').length;
-  const q_c   = ativos.filter(m=>m.farol==='Q').length;
-  const m_c   = ativos.filter(m=>m.farol==='M').length;
-  const mo_c  = ativos.filter(m=>m.farol==='Mo').length;
-
-  // Próxima semana
-  const ultimaSem = state.tracking.length > 0 ? state.tracking[state.tracking.length-1].semana : 'W17';
-  const proxNum = parseInt(ultimaSem.replace('W','')) + 1;
-  const proxSem = `W${proxNum}`;
-
-  const semana = prompt(`Registrar semana (atual: ${proxSem}):`, proxSem);
+  const semana = prompt('Nome da semana (ex: W18):');
   if (!semana) return;
+  const cfg = getCfg();
+  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const forecastAtual = calcForecastAjustado(state.municipios, cfg);
+  const tmFarol = calcTempoMedioFarol(state.municipios);
 
-  const { data, error } = await sb.from('pipeline_tracking').insert({
-    semana,
-    data_registro: new Date().toISOString().split('T')[0],
-    receita_potencial: receita,
-    municipios_count: ativos.length,
-    eficiencia: ativos.length > 0 ? Math.round(receita / 7) : 0,
-    quente: q_c, medio: m_c, morno: mo_c,
-    sql_count: sql_c, r1_count: r1_c, r2_count: r2_c,
-    r3_count: r3_c, licitacao_count: lic_c,
-    velocity: 0, ticket_medio: ativos.length > 0 ? receita/ativos.length : 0,
-    gargalo: r1_c >= r2_c ? 'R1' : r2_c >= r3_c ? 'R2' : 'R3'
-  }).select().single();
+  const eficiencias = ativos.map(m => {
+    const hoje = new Date();
+    const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao }[m.status];
+    const dias = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : 1;
+    return dias > 0 ? calcReceitaAjustada(m, cfg) / dias : 0;
+  }).filter(e => e > 0).sort((a,b) => a-b);
+  const eficMediana = eficiencias.length > 0 ? eficiencias[Math.floor(eficiencias.length/2)] : 0;
+
+  const tickets = ativos.map(m => {
+    const alunos = (m.ef1_alunos||0) + (m.ef2_alunos||0);
+    return alunos > 0 ? calcReceita(m, cfg) / alunos : 0;
+  }).filter(t => t > 0).sort((a,b) => a-b);
+  const ticketMediana = tickets.length > 0 ? tickets[Math.floor(tickets.length/2)] : 0;
+
+  const contEtapa = {};
+  ETAPAS_ATIVAS.forEach(e => { contEtapa[e] = ativos.filter(m => m.status === e).length; });
+  const gargalo = Object.entries(contEtapa).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
+
+  const { error } = await sb.from('pipeline_tracking').insert({
+    semana: semana.trim().toUpperCase(),
+    receita_potencial: forecastAtual,
+    municipios_ativos: ativos.length,
+    eficiencia_dia: eficMediana,
+    quente: ativos.filter(m => m.farol === 'Q').length,
+    morno: ativos.filter(m => m.farol === 'M').length,
+    sql: contEtapa['SQL'] || 0,
+    r1: contEtapa['R1'] || 0,
+    r2: contEtapa['R2'] || 0,
+    r3: contEtapa['R3'] || 0,
+    licitacao: contEtapa['Licitacao'] || 0,
+    velocity: parseFloat(((tmFarol.Q + tmFarol.M + tmFarol.F) / 3).toFixed(2)),
+    ticket_medio: ticketMediana,
+    gargalo,
+    data_registro: new Date().toISOString(),
+    registrado_por: state.user.id,
+  });
 
   if (error) { alert('Erro: ' + error.message); return; }
-  state.tracking.push(data);
-  showSave('Semana registrada!');
+  showSaveIndicator('saved', 'Semana registrada!');
   renderTracking();
 }
+
 
 // ============================================================
 // REUNIÃO SEMANAL
@@ -4242,6 +4319,108 @@ async function processarCSVGenerico(file) {
 // ============================================================
 // INDICADORES
 // ============================================================
+// ============================================================
+// PREFEITURAS PRIORITÁRIAS
+// ============================================================
+function renderPrefeituras() {
+  const cfg = getCfg();
+  // Municípios com farol definido — lista priorizada
+  const todos = state.municipios
+    .filter(m => m.farol || ETAPAS_ATIVAS.includes(m.status))
+    .map(m => {
+      const receita = calcReceita(m, cfg);
+      const pctFundeb = (m.fundeb_distribuido > 0) ? (receita / m.fundeb_distribuido) : 0;
+      const custoAluno = (m.ef1_alunos||0)+(m.ef2_alunos||0) > 0
+        ? (m.fundeb_distribuido || 0) / ((m.ef1_alunos||0)+(m.ef2_alunos||0))
+        : 0;
+      return { ...m, receita, pctFundeb, custoAluno };
+    })
+    .sort((a,b) => {
+      // Ordenar: ativos primeiro, depois por farol Q>M>F, depois receita desc
+      const farolOrd = {Q:0,M:1,F:2};
+      const aAtivo = ETAPAS_ATIVAS.includes(a.status) ? 0 : 1;
+      const bAtivo = ETAPAS_ATIVAS.includes(b.status) ? 0 : 1;
+      if (aAtivo !== bAtivo) return aAtivo - bAtivo;
+      const af = farolOrd[a.farol] ?? 3;
+      const bf = farolOrd[b.farol] ?? 3;
+      if (af !== bf) return af - bf;
+      return b.receita - a.receita;
+    });
+
+  // Partido do prefeito (extraído do campo nome — ex: "Nome (PL)")
+  const extrairPartido = (nome) => {
+    if (!nome) return '—';
+    const m = nome.match(/\(([^)]+)\)/);
+    return m ? m[1] : '—';
+  };
+
+  let htmlRows = '';
+  todos.forEach((m, i) => {
+    const partido = extrairPartido(m.prefeito);
+    const farolCor = {Q:'var(--danger)',M:'var(--warn)',F:'var(--blue)'}[m.farol] || 'var(--ink-dim)';
+    htmlRows += `
+      <tr style="cursor:pointer;" onclick="openDrawer('${m.id}')">
+        <td style="font-weight:600;color:var(--ink-dim);text-align:center;">${i+1}</td>
+        <td style="font-weight:700;">${escapeHtml(m.municipio)}</td>
+        <td style="font-size:.75rem;color:var(--ink-dim);">${escapeHtml(m.regiao_administrativa||'—')}</td>
+        <td>${m.farol ? '<span class="pill farol-'+m.farol+'" style="color:'+farolCor+';">'+m.farol+'</span>' : '—'}</td>
+        <td><span class="pill status-${m.status||''}">${m.status==='Licitacao'?'Licitação':(m.status||'—')}</span></td>
+        <td style="font-size:.78rem;">${escapeHtml(m.prefeito||'—')}</td>
+        <td style="font-size:.78rem;font-weight:600;color:var(--accent);">${escapeHtml(partido)}</td>
+        <td style="font-size:.78rem;">${escapeHtml(m.secretario_educacao||'—')}</td>
+        <td style="font-size:.78rem;">${escapeHtml(m.indicacao||'—')}</td>
+        <td class="num">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
+        <td class="num" style="font-weight:600;color:var(--accent);">${fmtMoney(m.receita)}</td>
+        <td class="num">${m.fundeb_distribuido ? fmtMoney(m.fundeb_distribuido) : '—'}</td>
+        <td class="num">${m.pctFundeb > 0 ? (m.pctFundeb*100).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${m.custoAluno > 0 ? fmtMoney(m.custoAluno) : '—'}</td>
+        <td class="num">${m.idhm ? fmtNum(m.idhm,3) : '—'}</td>
+        <td class="num">${m.indicador_performance_ef ? fmtNum(m.indicador_performance_ef,2) : '—'}</td>
+      </tr>`;
+  });
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Comercial · Ataque prioritário</div>
+        <h1>⭐ <em>Prefeituras Prioritárias</em></h1>
+      </div>
+      <div class="actions">
+        <span style="font-size:.8rem;color:var(--ink-dim);">${todos.length} prefeituras · ordenadas por prioridade</span>
+      </div>
+    </div>
+    <div class="page-body">
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
+        <div style="overflow-x:auto;">
+          <table class="data-table" style="font-size:.8rem;min-width:1200px;">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Município</th>
+                <th>Região</th>
+                <th>Farol</th>
+                <th>Status</th>
+                <th>Prefeito(a)</th>
+                <th>Partido</th>
+                <th>Secretário(a)</th>
+                <th>Indicação</th>
+                <th class="num">Alunos EF</th>
+                <th class="num">Receita Potencial</th>
+                <th class="num">FUNDEB</th>
+                <th class="num">% FUNDEB</th>
+                <th class="num">Custo/Aluno</th>
+                <th class="num">IDHM</th>
+                <th class="num">Score EF</th>
+              </tr>
+            </thead>
+            <tbody>${htmlRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function renderIndicadores() {
   const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
 
