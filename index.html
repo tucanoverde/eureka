@@ -554,6 +554,9 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
 .status-SQL { background: var(--accent-soft); color: var(--accent); }
 .status-R1, .status-R2, .status-R3 { background: var(--gold-soft); color: var(--gold); }
 .status-Licitacao { background: var(--warn-soft); color: var(--warn); }
+.status-Empenho  { background: var(--gold-soft); color: var(--gold); }
+.status-Entrega  { background: var(--blue-soft); color: var(--blue); }
+.status-Win      { background: var(--accent-soft); color: var(--accent-bright); font-weight:700; }
 .status-Ganho { background: var(--accent-soft); color: var(--accent-bright); }
 .status-Perdido { background: var(--danger-soft); color: var(--danger); }
 .status-Pausado, .status-Nao_Vale_Pena { background: var(--line); color: var(--ink-dim); }
@@ -1001,6 +1004,173 @@ const SUPABASE_KEY = 'sb_publishable_54ptZzAI_pwtyBt89MFE7w_yK503nnp';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ============================================================
+// ENGINE DE CÁLCULO — fonte única de verdade
+// Replica EXATAMENTE as fórmulas da planilha Excel
+// ============================================================
+
+// Etapas do pipeline na ordem correta (planilha)
+const ETAPAS_PIPELINE = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
+const ETAPAS_ATIVAS   = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega'];
+
+// Pesos padrão por etapa (Health!A17) — sobrescritos por Configurações
+const PESOS_ETAPA_DEFAULT = { SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85, Empenho:0.90, Entrega:0.95, Win:1.0 };
+
+// Pesos de conversão por farol (Dashboard!M5:M7) — sobrescritos por Configurações
+const PESOS_FAROL_DEFAULT = { Q:0.30, M:0.15, F:0.05 };
+
+// Retorna configurações ativas (com fallback nos defaults)
+function getCfg() {
+  const c = state.configuracoes;
+  const pf = c.pesos_forecast || {};
+  const ff = c.pesos_farol   || {};
+  return {
+    ef1:        c.repasse_aluno_ef1 || 400,
+    ef2:        c.repasse_aluno_ef2 || 500,
+    impostos:   c.impostos          || 0.0318,
+    redesa:     c.pct_redesa        || 0.50,
+    conv_agr:   (c.cenarios_conversao||{}).agressivo   || 1.00,
+    conv_real:  (c.cenarios_conversao||{}).realista     || 0.50,
+    conv_cons:  (c.cenarios_conversao||{}).conservador  || 0.25,
+    // Pesos por etapa
+    p_sql:  parseFloat(pf.sql      || PESOS_ETAPA_DEFAULT.SQL),
+    p_r1:   parseFloat(pf.r1       || PESOS_ETAPA_DEFAULT.R1),
+    p_r2:   parseFloat(pf.r2       || PESOS_ETAPA_DEFAULT.R2),
+    p_r3:   parseFloat(pf.r3       || PESOS_ETAPA_DEFAULT.R3),
+    p_lic:  parseFloat(pf.licitacao|| PESOS_ETAPA_DEFAULT.Licitacao),
+    p_emp:  parseFloat(pf.empenho  || PESOS_ETAPA_DEFAULT.Empenho),
+    p_ent:  parseFloat(pf.entrega  || PESOS_ETAPA_DEFAULT.Entrega),
+    p_win:  parseFloat(pf.win      || PESOS_ETAPA_DEFAULT.Win),
+    // Pesos por farol
+    f_q:    parseFloat(ff.quente   || PESOS_FAROL_DEFAULT.Q),
+    f_m:    parseFloat(ff.morno    || PESOS_FAROL_DEFAULT.M),
+    f_f:    parseFloat(ff.frio     || PESOS_FAROL_DEFAULT.F),
+  };
+}
+
+// Receita bruta de um município (alunos × ticket)
+function calcReceita(m, cfg) {
+  cfg = cfg || getCfg();
+  return (m.ef1_alunos||0) * cfg.ef1 + (m.ef2_alunos||0) * cfg.ef2;
+}
+
+// Peso de etapa para um município
+function getPesoEtapa(status, cfg) {
+  cfg = cfg || getCfg();
+  const map = {
+    SQL: cfg.p_sql, R1: cfg.p_r1, R2: cfg.p_r2, R3: cfg.p_r3,
+    Licitacao: cfg.p_lic, Empenho: cfg.p_emp, Entrega: cfg.p_ent, Win: cfg.p_win
+  };
+  return map[status] || 0;
+}
+
+// Receita ajustada pelo peso da etapa (= K27 na planilha)
+function calcReceitaAjustada(m, cfg) {
+  cfg = cfg || getCfg();
+  return calcReceita(m, cfg) * getPesoEtapa(m.status, cfg);
+}
+
+// Forecast ajustado total (= Health!A24 = SUM(K27:K503))
+function calcForecastAjustado(municipios, cfg) {
+  cfg = cfg || getCfg();
+  return municipios
+    .filter(m => ETAPAS_ATIVAS.includes(m.status))
+    .reduce((s, m) => s + calcReceitaAjustada(m, cfg), 0);
+}
+
+// Tempo médio por farol (= Health!M7, M10, M13)
+function calcTempoMedioFarol(municipios) {
+  const hoje = new Date();
+  const tempoMun = (m) => {
+    const dataEtapa = {
+      SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
+      R3: m.data_r3, Licitacao: m.data_licitacao,
+      Empenho: m.data_licitacao, Entrega: m.data_licitacao
+    }[m.status];
+    if (!dataEtapa) return m.tempo_na_etapa || 0;
+    return Math.floor((hoje - new Date(dataEtapa)) / 86400000);
+  };
+
+  const ativos = municipios.filter(m => ETAPAS_ATIVAS.includes(m.status) && m.farol);
+  const porFarol = (f) => {
+    const muns = ativos.filter(m => m.farol === f);
+    if (muns.length === 0) return 0;
+    return muns.reduce((s, m) => s + tempoMun(m), 0) / muns.length;
+  };
+
+  return { Q: porFarol('Q') || 26, M: porFarol('M') || 16, F: porFarol('F') || 22 };
+}
+
+// Health de um município (= J27 na planilha)
+function calcHealth(m, tempoMedioFarol) {
+  const hoje = new Date();
+  const dataEtapa = {
+    SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
+    R3: m.data_r3, Licitacao: m.data_licitacao,
+    Empenho: m.data_licitacao, Entrega: m.data_licitacao
+  }[m.status];
+  const tempo = dataEtapa
+    ? Math.floor((hoje - new Date(dataEtapa)) / 86400000)
+    : (m.tempo_na_etapa || 0);
+
+  const tRef = tempoMedioFarol[m.farol] || 21;
+  if (m.farol === 'Q') {
+    if (tempo <= tRef)       return '🟢';
+    if (tempo <= tRef * 1.5) return '🟡';
+    return '🔴';
+  }
+  if (m.farol === 'M') {
+    if (tempo <= tRef)       return '🟢';
+    if (tempo <= tRef * 1.3) return '🟡';
+    return '🔴';
+  }
+  if (m.farol === 'F') {
+    if (tempo <= tRef)       return '🟢';
+    if (tempo <= tRef * 1.2) return '🟡';
+    return '🔴';
+  }
+  return '';
+}
+
+// Velocity de um município (= L27 na planilha)
+function calcVelocity(m, tempoMedioFarol) {
+  const hoje = new Date();
+  const dataEtapa = {
+    SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
+    R3: m.data_r3, Licitacao: m.data_licitacao
+  }[m.status];
+  if (!dataEtapa || !m.farol) return 0;
+  const tempo = Math.floor((hoje - new Date(dataEtapa)) / 86400000);
+  const tRef = tempoMedioFarol[m.farol] || 21;
+  return tRef > 0 ? parseFloat((tempo / tRef).toFixed(2)) : 0;
+}
+
+// Ação recomendada (= N27 na planilha)
+function calcAcao(m, health) {
+  if (!m.farol) return '';
+  const receita = calcReceita(m);
+  if (health === '🔴') return receita >= 1000000 ? 'Agir Hoje' : 'Cobrar';
+  if (['Licitacao','R3','Empenho','Entrega'].includes(m.status)) return 'Acompanhar';
+  return 'Nutrir';
+}
+
+// Cenários financeiros completos
+function calcCenarios(forecast, cfg) {
+  cfg = cfg || getCfg();
+  const cen = (conv) => {
+    const receita  = forecast * conv;
+    const recLiq   = receita * (1 - cfg.impostos);
+    const redesa   = recLiq * cfg.redesa;
+    return { receita, recLiq, redesa, conv };
+  };
+  return {
+    agressivo:   cen(cfg.conv_agr),
+    realista:    cen(cfg.conv_real),
+    conservador: cen(cfg.conv_cons),
+  };
+}
+
+
+// ============================================================
 // ESTADO GLOBAL
 // ============================================================
 const state = {
@@ -1236,7 +1406,7 @@ function renderDashboard() {
   const alunosTAM = todos.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
 
   // Funil por etapa
-  const stages = ['SQL','R1','R2','R3','Licitacao','Ganho'];
+  const stages = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win','Ganho'];
   const stageData = stages.map(s => {
     const mun = todos.filter(m => m.status === s);
     return { label: s==='Licitacao'?'Licitação':s, count: mun.length,
@@ -1737,6 +1907,9 @@ function renderMunicipios() {
             <option value="R2">R2</option>
             <option value="R3">R3</option>
             <option value="Licitacao">Licitação</option>
+            <option value="Empenho">Empenho</option>
+            <option value="Entrega">Entrega</option>
+            <option value="Win">Win</option>
             <option value="Ganho">Ganho</option>
             <option value="Perdido">Perdido</option>
             <option value="Pausado">Pausado</option>
@@ -2121,6 +2294,9 @@ function renderDrawerComercial(m) {
           <option value="R2"              ${m.status==='R2'?'selected':''}>R2</option>
           <option value="R3"              ${m.status==='R3'?'selected':''}>R3</option>
           <option value="Licitacao"       ${m.status==='Licitacao'?'selected':''}>Licitação</option>
+          <option value="Empenho"         ${m.status==='Empenho'?'selected':''}>Empenho</option>
+          <option value="Entrega"         ${m.status==='Entrega'?'selected':''}>Entrega</option>
+          <option value="Win"             ${m.status==='Win'?'selected':''}>Win</option>
           <option value="Ganho"           ${m.status==='Ganho'?'selected':''}>Ganho</option>
           <option value="Perdido"         ${m.status==='Perdido'?'selected':''}>Perdido</option>
           <option value="Pausado"         ${m.status==='Pausado'?'selected':''}>Pausado</option>
@@ -3261,16 +3437,18 @@ function renderReuniao() {
 
 function renderPipeline() {
   const stages = [
-    { key: 'SQL', label: 'SQL' },
-    { key: 'R1', label: 'R1' },
-    { key: 'R2', label: 'R2' },
-    { key: 'R3', label: 'R3' },
-    { key: 'Licitacao', label: 'Licitação' },
-    { key: 'Ganho', label: 'Ganho' },
+    { key: 'SQL',      label: 'SQL' },
+    { key: 'R1',       label: 'R1' },
+    { key: 'R2',       label: 'R2' },
+    { key: 'R3',       label: 'R3' },
+    { key: 'Licitacao',label: 'Licitação' },
+    { key: 'Empenho',  label: 'Empenho' },
+    { key: 'Entrega',  label: 'Entrega' },
+    { key: 'Win',      label: 'Win' },
+    { key: 'Ganho',    label: 'Ganho' },
   ];
 
-  const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
-  const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
+  const cfg = getCfg();
 
   const groups = {};
   stages.forEach(s => { groups[s.key] = []; });
@@ -3289,7 +3467,7 @@ function renderPipeline() {
       <div class="kanban">
         ${stages.map(s => {
           const mun = groups[s.key];
-          const rev = mun.reduce((sum, m) => sum + ((m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2), 0);
+          const rev = mun.reduce((sum, m) => sum + calcReceita(m, cfg), 0);
           return `
             <div class="kanban-col" data-status="${s.key}">
               <div class="kanban-col-header">
@@ -3298,7 +3476,7 @@ function renderPipeline() {
               </div>
               <div class="kanban-cards">
                 ${mun.map(m => {
-                  const r = (m.ef1_alunos||0)*repasseEF1 + (m.ef2_alunos||0)*repasseEF2;
+                  const r = calcReceita(m, cfg);
                   return `
                     <div class="kanban-card" draggable="true" data-id="${m.id}">
                       <div class="city">${escapeHtml(m.municipio)}</div>
@@ -3340,9 +3518,8 @@ function renderPipeline() {
 
 async function mudarStatus(id, novoStatus) {
   const updates = { status: novoStatus, atualizado_por: state.user.id };
-  // Auto-preenche data da etapa
   const dataField = `data_${novoStatus.toLowerCase()}`;
-  const validDates = ['data_sql','data_r1','data_r2','data_r3','data_licitacao','data_win'];
+  const validDates = ['data_sql','data_r1','data_r2','data_r3','data_licitacao','data_win','data_empenho','data_entrega'];
   if (validDates.includes(dataField)) {
     updates[dataField] = new Date().toISOString().slice(0, 10);
   }
@@ -4347,13 +4524,24 @@ function renderConfiguracoes() {
       </div>
 
       <div class="section-title">Pesos de Forecast por Etapa (%)</div>
-      <div class="message">Probabilidade de conversão por etapa. Afeta o Forecast Ajustado em todas as telas.</div>
+      <div class="message">Probabilidade de conversão por etapa — replicado de Health!A17. Use 2 casas decimais.</div>
       <div class="form-grid">
-        <div class="field"><label>SQL (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${Math.round(((state.configuracoes.pesos_forecast||{}).sql||0.25)*100)}"></div>
-        <div class="field"><label>R1 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r1||0.30)*100)}"></div>
-        <div class="field"><label>R2 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r2||0.40)*100)}"></div>
-        <div class="field"><label>R3 (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${Math.round(((state.configuracoes.pesos_forecast||{}).r3||0.50)*100)}"></div>
-        <div class="field"><label>Licitação (%)</label><input type="number" step="1" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${Math.round(((state.configuracoes.pesos_forecast||{}).licitacao||0.85)*100)}"></div>
+        <div class="field"><label>SQL (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${((state.configuracoes.pesos_forecast||{}).sql||0.25)*100}"></div>
+        <div class="field"><label>R1 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${((state.configuracoes.pesos_forecast||{}).r1||0.30)*100}"></div>
+        <div class="field"><label>R2 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${((state.configuracoes.pesos_forecast||{}).r2||0.40)*100}"></div>
+        <div class="field"><label>R3 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r3" value="${((state.configuracoes.pesos_forecast||{}).r3||0.50)*100}"></div>
+        <div class="field"><label>Licitação (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.licitacao" value="${((state.configuracoes.pesos_forecast||{}).licitacao||0.85)*100}"></div>
+        <div class="field"><label>Empenho (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.empenho" value="${((state.configuracoes.pesos_forecast||{}).empenho||0.90)*100}"></div>
+        <div class="field"><label>Entrega (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.entrega" value="${((state.configuracoes.pesos_forecast||{}).entrega||0.95)*100}"></div>
+        <div class="field"><label>Win (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.win" value="${((state.configuracoes.pesos_forecast||{}).win||1.00)*100}"></div>
+      </div>
+
+      <div class="section-title">Pesos de Conversão por Farol (%)</div>
+      <div class="message">Dashboard!M5:M7 — usados nos cenários por farol em todas as telas.</div>
+      <div class="form-grid">
+        <div class="field"><label>🔴 Quente (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.quente" value="${((state.configuracoes.pesos_farol||{}).quente||0.30)*100}"></div>
+        <div class="field"><label>🟡 Morno (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.morno" value="${((state.configuracoes.pesos_farol||{}).morno||0.15)*100}"></div>
+        <div class="field"><label>🔵 Frio (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_farol.frio" value="${((state.configuracoes.pesos_farol||{}).frio||0.05)*100}"></div>
       </div>
 
       <div class="section-title">Modelo de Remuneração</div>
@@ -4593,12 +4781,18 @@ async function salvarConfiguracoes() {
     });
   });
 
-  // Agrupa nested
+  // Agrupa nested — pesos_forecast e pesos_farol ficam em decimal (÷100)
   const grupos = {};
   nested.forEach(el => {
     const [grupo, sub] = el.dataset.cfgNested.split('.');
     grupos[grupo] = grupos[grupo] || {};
-    grupos[grupo][sub] = parseFloat(el.value);
+    const val = parseFloat(el.value);
+    // Converter % para decimal nos grupos de pesos
+    if (['pesos_forecast','pesos_farol','cenarios_conversao'].includes(grupo)) {
+      grupos[grupo][sub] = parseFloat((val / 100).toFixed(4));
+    } else {
+      grupos[grupo][sub] = val;
+    }
   });
   Object.entries(grupos).forEach(([chave, valor]) => {
     updates.push({ chave, valor, atualizado_por: state.user.id });
