@@ -2271,7 +2271,10 @@ function renderDrawerComercial(m) {
           Partido
           ${btnBusca(`partido prefeito ${m.municipio} ${m.uf} 2024`, `Buscar partido do prefeito`)}
         </label>
-        <input data-field="prefeito_partido" type="text" value="${escapeHtml(m.prefeito_partido || '')}">
+        <div style="display:flex;gap:.5rem;align-items:center;">
+          ${m.partido_prefeito ? `<span style="font-weight:700;color:var(--accent);font-size:1rem;">${escapeHtml(m.partido_prefeito)}</span><span style="font-size:.72rem;color:var(--ink-faint);">TSE 2024</span>` : ''}
+          <input data-field="prefeito_partido" type="text" value="${escapeHtml(m.prefeito_partido || m.partido_prefeito || '')}" placeholder="Partido..." style="flex:1;">
+        </div>
       </div>
       <div class="field">
         <label style="display:flex;justify-content:space-between;align-items:center;">
@@ -4376,7 +4379,7 @@ function renderPrefeituras() {
 
   let htmlRows = '';
   todos.forEach((m, i) => {
-    const partido = extrairPartido(m.prefeito);
+    const partido = m.partido_prefeito || extrairPartido(m.prefeito);
     const farolCor = {Q:'var(--danger)',M:'var(--warn)',F:'var(--blue)'}[m.farol] || 'var(--ink-dim)';
     htmlRows += `
       <tr style="cursor:pointer;" onclick="openDrawer('${m.id}')">
