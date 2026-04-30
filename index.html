@@ -556,7 +556,8 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
 .status-Licitacao { background: var(--warn-soft); color: var(--warn); }
 .status-Empenho  { background: var(--gold-soft); color: var(--gold); }
 .status-Entrega  { background: var(--blue-soft); color: var(--blue); }
-.status-Win      { background: var(--accent-soft); color: var(--accent-bright); font-weight:700; }
+.status-Win      { background: #d4edda; color: #155724; font-weight:700; }
+.status-Ganho    { display:none; }
 .status-Ganho { background: var(--accent-soft); color: var(--accent-bright); }
 .status-Perdido { background: var(--danger-soft); color: var(--danger); }
 .status-Pausado, .status-Nao_Vale_Pena { background: var(--line); color: var(--ink-dim); }
@@ -1024,7 +1025,7 @@ function toDisplayPct(v, def) {
 
 // Etapas do pipeline na ordem correta (planilha)
 const ETAPAS_PIPELINE = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
-const ETAPAS_ATIVAS   = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega'];
+const ETAPAS_ATIVAS   = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
 
 // Pesos padrão por etapa (Health!A17) — sobrescritos por Configurações
 const PESOS_ETAPA_DEFAULT = { SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85, Empenho:0.90, Entrega:0.95, Win:1.0 };
@@ -1420,7 +1421,7 @@ function renderDashboard() {
   const alunosTAM = todos.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
 
   // Funil por etapa
-  const stages = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win','Ganho'];
+  const stages = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
   const stageData = stages.map(s => {
     const mun = todos.filter(m => m.status === s);
     return { label: s==='Licitacao'?'Licitação':s, count: mun.length,
@@ -1973,8 +1974,7 @@ function renderMunicipios() {
             <option value="Empenho">Empenho</option>
             <option value="Entrega">Entrega</option>
             <option value="Win">Win</option>
-            <option value="Ganho">Ganho</option>
-            <option value="Perdido">Perdido</option>
+                        <option value="Perdido">Perdido</option>
             <option value="Pausado">Pausado</option>
             <option value="Nao_Vale_Pena">Não vale a pena</option>
           </select>
@@ -2359,8 +2359,7 @@ function renderDrawerComercial(m) {
           <option value="Licitacao"       ${m.status==='Licitacao'?'selected':''}>Licitação</option>
           <option value="Empenho"         ${m.status==='Empenho'?'selected':''}>Empenho</option>
           <option value="Entrega"         ${m.status==='Entrega'?'selected':''}>Entrega</option>
-          <option value="Win"             ${m.status==='Win'?'selected':''}>Win</option>
-          <option value="Ganho"           ${m.status==='Ganho'?'selected':''}>Ganho</option>
+          <option value="Win"             ${m.status==='Win'?'selected':''}>Win ✅</option>
           <option value="Perdido"         ${m.status==='Perdido'?'selected':''}>Perdido</option>
           <option value="Pausado"         ${m.status==='Pausado'?'selected':''}>Pausado</option>
           <option value="Nao_Vale_Pena"   ${m.status==='Nao_Vale_Pena'?'selected':''}>Não vale a pena</option>
@@ -2912,7 +2911,7 @@ function renderHealth() {
         <div style="background:var(--bg);border-radius:4px;padding:.6rem;">
           <div style="font-size:.7rem;font-weight:600;color:var(--ink-dim);margin-bottom:.4rem;text-transform:capitalize;">${c}</div>
           <div style="font-size:.85rem;font-weight:700;">${fmtMoney(cn.receita)}</div>
-          <div style="font-size:.7rem;color:var(--accent);">Redesa: ${fmtMoney(cn.redesa)}</div>
+          <div style="font-size:.7rem;color:var(--ink-dim);">${fmtNum(Math.round(info.alunos * {agressivo:cfg.conv_agr,realista:cfg.conv_real,conservador:cfg.conv_cons}[c]))} alunos</div>
         </div>`;
     });
     htmlFarol += `
@@ -3287,36 +3286,39 @@ async function registrarSemana() {
 // ============================================================
 // REUNIÃO SEMANAL
 // ============================================================
-function renderReuniao() {
+async function renderReuniao() {
   const cfg = getCfg();
   const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
   const tmFarol = calcTempoMedioFarol(state.municipios);
 
+  // Buscar semanas salvas
+  const { data: historico } = await sb.from('reuniao_semanal').select('*').order('criado_em', { ascending: false });
+  const semanasSalvas = historico || [];
+
+  // Semana atual selecionada (padrão = mais recente ou nova)
+  const semanaAtual = semanasSalvas.length > 0 ? semanasSalvas[0].semana : null;
+  const semanasUnicas = [...new Set(semanasSalvas.map(r => r.semana))];
+
+  // Estado atual do pipeline
   const rows = ativos.map(m => {
     const hoje = new Date();
-    const dataEtapa = {
-      SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2,
-      R3: m.data_r3, Licitacao: m.data_licitacao,
-      Empenho: m.data_licitacao, Entrega: m.data_licitacao
-    }[m.status];
-    const tempoEtapa = dataEtapa
-      ? Math.floor((hoje - new Date(dataEtapa)) / 86400000)
-      : (m.tempo_na_etapa || 0);
-    const health  = calcHealth(m, tmFarol);
+    const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+    const tempoEtapa = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 0);
+    const health = calcHealth(m, tmFarol);
     const velocity = calcVelocity(m, tmFarol);
-    const acao    = calcAcao(m, health);
+    const acao = calcAcao(m, health);
     const receita = calcReceita(m, cfg);
-    const recAdj  = calcReceitaAjustada(m, cfg);
-    return { ...m, tempoEtapa, health, velocity, acao, receita, recAdj };
+    const recAdj = calcReceitaAjustada(m, cfg);
+    // Buscar registro da semana atual para este município
+    const reg = semanaAtual ? semanasSalvas.find(r => r.semana === semanaAtual && r.municipio_id === m.id) : null;
+    return { ...m, tempoEtapa, health, velocity, acao, receita, recAdj, reg };
   }).sort((a,b) => {
     const order = ETAPAS_PIPELINE;
     return order.indexOf(a.status) - order.indexOf(b.status) || b.receita - a.receita;
   });
 
-  const totalReceita = rows.reduce((s,r) => s+r.receita, 0);
-  const forecastAdj  = rows.reduce((s,r) => s+r.recAdj, 0);
-  const vermelhos    = rows.filter(r => r.health === '🔴').length;
-  const ticketMedio  = rows.length > 0 ? totalReceita / rows.length : 0;
+  const forecastAdj = rows.reduce((s,r) => s+r.recAdj, 0);
+  const vermelhos = rows.filter(r => r.health === '🔴').length;
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -3324,134 +3326,152 @@ function renderReuniao() {
         <div class="crumb">Comercial · Pipeline ativo</div>
         <h1><em>Reunião Semanal</em></h1>
       </div>
-      <div class="actions">
-        <span style="font-size:.8rem;color:var(--ink-dim);">${rows.length} municípios · ${new Date().toLocaleDateString('pt-BR')}</span>
+      <div class="actions" style="display:flex;gap:.75rem;align-items:center;">
+        <select id="semanaSelect" style="font:inherit;font-size:.85rem;background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:6px 12px;color:var(--ink);">
+          <option value="">— Semana atual —</option>
+          ${semanasUnicas.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}
+        </select>
+        <button class="btn primary" onclick="registrarSemanaReuniao()">📋 Registrar semana</button>
       </div>
     </div>
     <div class="page-body">
 
       <!-- KPIs -->
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.5rem;">
-        <div class="kpi-card" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
-          <div class="kpi-value" style="font-family:Fraunces,serif;font-size:1.5rem;font-weight:500;">${fmtMoney(totalReceita)}</div>
-          <div class="kpi-label" style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;margin-top:.25rem;">Receita potencial</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">Forecast Ajustado</div>
+          <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;">${fmtMoney(forecastAdj)}</div>
         </div>
-        <div class="kpi-card" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
-          <div class="kpi-value" style="font-family:Fraunces,serif;font-size:1.5rem;font-weight:500;">${fmtMoney(forecastAdj)}</div>
-          <div class="kpi-label" style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;margin-top:.25rem;">Forecast ajustado</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">Municípios Ativos</div>
+          <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;">${rows.length}</div>
         </div>
-        <div class="kpi-card" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
-          <div class="kpi-value" style="font-family:Fraunces,serif;font-size:1.5rem;font-weight:500;color:${vermelhos>0?'var(--danger)':'var(--accent)'};">${vermelhos}</div>
-          <div class="kpi-label" style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;margin-top:.25rem;">⚠️ Em atraso</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">⚠️ Em atraso</div>
+          <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;color:${vermelhos>0?'var(--danger)':'var(--accent)'};">${vermelhos}</div>
         </div>
-        <div class="kpi-card" style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
-          <div class="kpi-value" style="font-family:Fraunces,serif;font-size:1.5rem;font-weight:500;">${fmtMoney(ticketMedio)}</div>
-          <div class="kpi-label" style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;margin-top:.25rem;">Ticket médio</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">Semanas no histórico</div>
+          <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;">${semanasUnicas.length}</div>
         </div>
       </div>
 
-      <!-- Tabela com campos editáveis inline -->
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-bottom:1.5rem;">
-        <table class="data-table" style="font-size:.8rem;">
+      <!-- Tabela operacional -->
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
+        <table class="data-table" style="font-size:.78rem;">
           <thead>
             <tr>
-              <th>Região</th>
               <th>Município</th>
               <th>Farol</th>
               <th class="num">Alunos</th>
-              <th class="num">Receita</th>
+              <th class="num">Receita Aj.</th>
               <th>Status</th>
               <th class="num">Dias</th>
               <th>Health</th>
               <th class="num">Velocity</th>
-              <th class="num">Receita Aj.</th>
               <th>Ação</th>
               <th style="min-width:160px;">Próxima Ação</th>
-              <th style="min-width:110px;">Data</th>
-              <th style="min-width:120px;">Responsável</th>
-              <th style="min-width:140px;">Bloqueio</th>
+              <th style="min-width:100px;">Data</th>
+              <th style="min-width:110px;">Responsável</th>
+              <th style="min-width:130px;">Bloqueio</th>
+              <th style="min-width:140px;">Fechamento</th>
             </tr>
           </thead>
           <tbody>
             ${rows.length === 0
-              ? `<tr><td colspan="15" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhum município ativo no pipeline.</td></tr>`
+              ? `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhum município ativo.</td></tr>`
               : rows.map(m => `
                 <tr>
-                  <td style="color:var(--ink-dim);font-size:.75rem;">${escapeHtml(m.regiao_administrativa||'—')}</td>
                   <td style="font-weight:600;cursor:pointer;" onclick="openDrawer('${m.id}')">${escapeHtml(m.municipio)}</td>
                   <td><span class="pill farol-${m.farol||''}">${m.farol||'—'}</span></td>
                   <td class="num">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
-                  <td class="num">${fmtMoney(m.receita)}</td>
+                  <td class="num" style="font-weight:600;">${fmtMoney(m.recAdj)}</td>
                   <td><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
                   <td class="num">${m.tempoEtapa}d</td>
                   <td style="text-align:center;font-size:1rem;">${m.health}</td>
                   <td class="num">${m.velocity.toFixed(2)}</td>
-                  <td class="num" style="font-weight:600;">${fmtMoney(m.recAdj)}</td>
-                  <td style="font-size:.75rem;font-weight:600;color:${
-                    m.acao==='Agir Hoje'?'var(--danger)':
-                    m.acao==='Cobrar'?'var(--danger)':
-                    m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'
-                  };">${m.acao}</td>
-                  <!-- Campos editáveis inline -->
-                  <td style="padding:2px 4px;">
-                    <input type="text" value="${escapeHtml(m.proxima_acao||'')}" placeholder="Próxima ação..."
-                      style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.78rem;background:var(--bg);"
-                      onchange="salvarCampoRapido('${m.id}','proxima_acao',this.value)">
-                  </td>
-                  <td style="padding:2px 4px;">
-                    <input type="date" value="${m.data_proxima_acao||''}"
-                      style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.78rem;background:var(--bg);"
-                      onchange="salvarCampoRapido('${m.id}','data_proxima_acao',this.value)">
-                  </td>
-                  <td style="padding:2px 4px;">
-                    <input type="text" value="${escapeHtml(m.responsavel||'')}" placeholder="Responsável..."
-                      style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.78rem;background:var(--bg);"
-                      onchange="salvarCampoRapido('${m.id}','responsavel',this.value)">
-                  </td>
-                  <td style="padding:2px 4px;">
-                    <input type="text" value="${escapeHtml(m.bloqueio||'')}" placeholder="Bloqueio..."
-                      style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.78rem;background:var(--bg);color:var(--danger);"
-                      onchange="salvarCampoRapido('${m.id}','bloqueio',this.value)">
-                  </td>
+                  <td style="font-size:.72rem;font-weight:600;color:${m.acao==='Agir Hoje'||m.acao==='Cobrar'?'var(--danger)':m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'};">${m.acao}</td>
+                  <td style="padding:2px 4px;"><input type="text" value="${escapeHtml(m.reg?.proxima_acao||m.proxima_acao||'')}" placeholder="Próxima ação..."
+                    style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
+                    onchange="salvarCampoRapido('${m.id}','proxima_acao',this.value)"></td>
+                  <td style="padding:2px 4px;"><input type="date" value="${m.reg?.data_proxima_acao||m.data_proxima_acao||''}"
+                    style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
+                    onchange="salvarCampoRapido('${m.id}','data_proxima_acao',this.value)"></td>
+                  <td style="padding:2px 4px;"><input type="text" value="${escapeHtml(m.reg?.responsavel||m.responsavel||'')}" placeholder="Responsável..."
+                    style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
+                    onchange="salvarCampoRapido('${m.id}','responsavel',this.value)"></td>
+                  <td style="padding:2px 4px;"><input type="text" value="${escapeHtml(m.reg?.bloqueio||m.bloqueio||'')}" placeholder="Bloqueio..."
+                    style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--danger);"
+                    onchange="salvarCampoRapido('${m.id}','bloqueio',this.value)"></td>
+                  <td style="padding:2px 4px;"><input type="text" value="${escapeHtml(m.reg?.fechamento_semana||'')}" placeholder="Fechamento..."
+                    style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--accent);"
+                    onchange="salvarFechamentoSemana('${m.id}', this.value)"></td>
                 </tr>
               `).join('')}
           </tbody>
         </table>
       </div>
 
-      <!-- Resumo por etapa -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;">
-        ${ETAPAS_ATIVAS.map(etapa => {
-          const muns = rows.filter(r => r.status === etapa);
-          const rev  = muns.reduce((s,r) => s+r.receita, 0);
-          const fore = muns.reduce((s,r) => s+r.recAdj, 0);
-          const atrs = muns.filter(r => r.health === '🔴').length;
-          return `
-            <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
-              <div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem;color:var(--accent);">${etapa==='Licitacao'?'Licitação':etapa}</div>
-              <div style="font-size:1.1rem;font-weight:600;">${muns.length} municípios</div>
-              <div style="font-size:.8rem;color:var(--ink-dim);">${fmtMoney(rev)} potencial</div>
-              <div style="font-size:.8rem;color:var(--ink-soft);">${fmtMoney(fore)} forecast</div>
-              ${atrs > 0 ? `<div style="font-size:.75rem;color:var(--danger);">⚠️ ${atrs} em atraso</div>` : ''}
-              <div style="font-size:.7rem;color:var(--ink-faint);margin-top:.25rem;">Peso: ${(getPesoEtapa(etapa,cfg)*100).toFixed(2)}%</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
+      <!-- Histórico de semanas -->
+      ${semanasUnicas.length > 0 ? `
+      <div style="margin-top:1.5rem;">
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Histórico Semanal</h2>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+          ${semanasUnicas.map(s => `
+            <button onclick="verSemana('${escapeHtml(s)}')"
+              style="font:inherit;font-size:.8rem;padding:4px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg-elev);cursor:pointer;">
+              ${escapeHtml(s)}
+            </button>
+          `).join('')}
+        </div>
+      </div>` : ''}
 
     </div>
   `;
 }
 
-// Salvar campo individual da reunião sem debounce
-async function salvarCampoRapido(id, campo, valor) {
-  const { error } = await sb.from('municipios')
-    .update({ [campo]: valor || null, atualizado_por: state.user.id })
-    .eq('id', id);
-  if (error) { console.error('Erro ao salvar:', error); return; }
-  const idx = state.municipios.findIndex(m => m.id === id);
-  if (idx >= 0) state.municipios[idx][campo] = valor || null;
-  showSaveIndicator('saved', 'Salvo');
+async function registrarSemanaReuniao() {
+  const semana = prompt('Nome da semana (ex: W18):');
+  if (!semana) return;
+  const cfg = getCfg();
+  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const tmFarol = calcTempoMedioFarol(state.municipios);
+
+  const registros = ativos.map(m => ({
+    semana: semana.trim().toUpperCase(),
+    municipio_id: m.id,
+    municipio: m.municipio,
+    proxima_acao: m.proxima_acao || null,
+    data_proxima_acao: m.data_proxima_acao || null,
+    responsavel: m.responsavel || null,
+    bloqueio: m.bloqueio || null,
+    fechamento_semana: null,
+    criado_por: state.user.id,
+  }));
+
+  const { error } = await sb.from('reuniao_semanal').insert(registros);
+  if (error) { alert('Erro: ' + error.message); return; }
+  showSaveIndicator('saved', `Semana ${semana} registrada!`);
+  renderReuniao();
+}
+
+async function salvarFechamentoSemana(municipioId, valor) {
+  // Salva fechamento na tabela reuniao_semanal da semana mais recente
+  const { data: reg } = await sb.from('reuniao_semanal')
+    .select('id').eq('municipio_id', municipioId)
+    .order('criado_em', { ascending: false }).limit(1).single();
+
+  if (reg) {
+    await sb.from('reuniao_semanal').update({ fechamento_semana: valor || null }).eq('id', reg.id);
+  }
+  // Salva também no município
+  await salvarCampoRapido(municipioId, 'observacoes', valor);
+}
+
+function verSemana(semana) {
+  document.getElementById('semanaSelect').value = semana;
+  // Recarregar com filtro da semana selecionada
+  renderReuniao();
 }
 
 
@@ -4423,40 +4443,44 @@ function renderPrefeituras() {
 
 async function renderIndicadores() {
   const { data: indicadores } = await sb.from('indicadores_externos').select('*').order('codigo');
+  const cfg = getCfg();
 
-  // Parâmetros do modelo de remuneração (Excel)
-  const IMPOSTOS  = 0.0318;
-  const REDESA    = 0.50;
-  const MODELO = {
-    apresentador: 0.20,
-    consolidador: 0.00,
-    gestao:       0.10,
-    opex:         0.10,
-    internalizado:0.25,
-    equipe:       0.3225,
-    fundo_reserva:0.0275,
-  };
+  // Forecast ajustado total = Health!A24 = SUM(K27:K503)
+  // K27 = receita_potencial * peso_etapa
+  const forecastTotal = calcForecastAjustado(state.municipios, cfg);
+  const recLiq = forecastTotal * (1 - cfg.impostos);
+  const redesa = recLiq * cfg.redesa;
 
-  // Receita pipeline ativo
-  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
-  const PESOS  = {SQL:0.25,R1:0.30,R2:0.40,R3:0.50,Licitacao:0.85};
-  const ativos = state.municipios.filter(m => ETAPAS.includes(m.status));
-  const forecastBase = ativos.reduce((s,m) => {
-    const rec = (m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500;
-    return s + rec*(PESOS[m.status]||0.25);
-  }, 0);
-  const recLiq  = forecastBase*(1-IMPOSTOS);
-  const redesa  = recLiq*REDESA;
+  // Alunos totais nos municípios ativos (ponderado pelo peso da etapa)
+  // Planilha: K2 = SUM(FILTER(D27:D50501, municípios ativos))
+  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const alunosTotais = ativos.reduce((s,m) => s + (m.ef1_alunos||0) + (m.ef2_alunos||0), 0);
 
-  // Por indicador — receita do pipeline ativo
+  // Por indicador — só municípios ativos do indicador
   const calcIndicador = (ind) => {
     const muns = ativos.filter(m => m.indicacao === ind.codigo);
-    const rec = muns.reduce((s,m) => {
-      const r = (m.ef1_alunos||0)*400 + (m.ef2_alunos||0)*500;
-      return s + r*(PESOS[m.status]||0.25);
-    }, 0);
-    return { muns, rec, comissao: rec*(1-IMPOSTOS)*REDESA*(ind.percentual_comissao||0) };
+    const fore = muns.reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
+    const alunos = muns.reduce((s,m) => s + (m.ef1_alunos||0) + (m.ef2_alunos||0), 0);
+    const comissao = fore * (1 - cfg.impostos) * cfg.redesa * (ind.percentual_comissao || 0);
+    return { muns: muns.length, fore, alunos, comissao };
   };
+
+  // Modelo de remuneração
+  const rem = state.configuracoes.remuneracao || {};
+  const sql_ab  = normPeso(rem.sql_abertura,    0.04);
+  const r1_part = normPeso(rem.r1_participacao, 0.04);
+  const distrib = normPeso(rem.distribuicao,    0.12);
+  const consol  = normPeso(rem.consolidador,    0.00);
+  const gestao  = normPeso(rem.gestao,          0.10);
+  const opex    = normPeso(rem.opex,            0.10);
+  const interal = normPeso(rem.internalizado,   0.25);
+  const lcm_in  = normPeso(rem.lcm,             0.06);
+  const apres   = sql_ab + r1_part + distrib;
+  const equipe  = 1 - (apres + consol + gestao + opex + interal);
+  const lm_pct  = equipe / 4;
+  const mv_pct  = equipe / 4;
+  const edu_pct = equipe / 4;
+  const fundo   = equipe - lcm_in - lm_pct - mv_pct - edu_pct;
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -4470,91 +4494,85 @@ async function renderIndicadores() {
     </div>
     <div class="page-body">
 
-      <!-- Modelo de Remuneração -->
-      <div style="margin-bottom:1.5rem;">
-        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Modelo de Remuneração — Distribuição do Faturamento Redesa</h2>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1rem;">
-          <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;text-align:center;">
-            <div style="font-size:.75rem;opacity:.8;margin-bottom:.25rem;">Forecast Ajustado</div>
-            <div style="font-size:1.3rem;font-weight:700;">${fmtMoney(forecastBase)}</div>
-          </div>
-          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
-            <div style="font-size:.75rem;color:var(--ink-dim);margin-bottom:.25rem;">Receita Líquida (−${(IMPOSTOS*100).toFixed(2)}%)</div>
-            <div style="font-size:1.3rem;font-weight:700;">${fmtMoney(recLiq)}</div>
-          </div>
-          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
-            <div style="font-size:.75rem;color:var(--ink-dim);margin-bottom:.25rem;">Faturamento Redesa (50%)</div>
-            <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">${fmtMoney(redesa)}</div>
-          </div>
-          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;text-align:center;">
-
-            <div style="font-size:1.3rem;font-weight:700;color:var(--accent);">${fmtMoney(redesa*0.18728)}</div>
-          </div>
+      <!-- KPIs do forecast -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
+        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;opacity:.8;">Forecast Ajustado (Health!A24)</div>
+          <div style="font-size:1.2rem;font-weight:700;">${fmtMoney(forecastTotal)}</div>
+          <div style="font-size:.7rem;opacity:.7;">= SUM(receita × peso_etapa)</div>
         </div>
-
-        <!-- Distribuição do Redesa -->
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
-          <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
-            <thead>
-              <tr style="background:var(--bg);">
-                <th style="padding:.6rem .75rem;text-align:left;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Papel</th>
-                <th style="padding:.6rem .75rem;text-align:right;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">% Redesa</th>
-                <th style="padding:.6rem .75rem;text-align:right;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Valor Est.</th>
-                <th style="padding:.6rem .75rem;text-align:left;font-size:.7rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);">Descrição</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${[
-                ['Apresentador',   MODELO.apresentador,   'Quem apresentou a solução'],
-                ['Consolidador',   MODELO.consolidador,   'Quem consolidou o contrato'],
-                ['Gestão Comercial', MODELO.gestao,       'Gestão do processo comercial'],
-                ['OPEX',           MODELO.opex,           'Custos operacionais'],
-                ['Internalizado',  MODELO.internalizado,  'Parcela internalizada Redesa'],
-                ['Equipe',         MODELO.equipe,         'Distribuição para equipe'],
-                ['Fundo Reserva',  MODELO.fundo_reserva,  'Reserva estratégica'],
-              ].map(([nome, pct, desc]) => `
-                <tr style="border-bottom:1px solid var(--line);">
-                  <td style="padding:.6rem .75rem;font-weight:600;">${nome}</td>
-                  <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;">${(pct*100).toFixed(2)}%</td>
-                  <td style="padding:.6rem .75rem;text-align:right;font-weight:600;color:var(--accent);">${fmtMoney(redesa*pct)}</td>
-                  <td style="padding:.6rem .75rem;font-size:.78rem;color:var(--ink-dim);">${desc}</td>
-                </tr>
-              `).join('')}
-              <tr style="background:var(--accent-soft);font-weight:700;border-top:2px solid var(--accent);">
-                <td style="padding:.6rem .75rem;">TOTAL</td>
-                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;">${(Object.values(MODELO).reduce((a,b)=>a+b,0)*100).toFixed(2)}%</td>
-                <td style="padding:.6rem .75rem;text-align:right;color:var(--accent);">${fmtMoney(redesa*Object.values(MODELO).reduce((a,b)=>a+b,0))}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);">Fat. Redesa</div>
+          <div style="font-size:1.2rem;font-weight:700;">${fmtMoney(redesa)}</div>
+          <div style="font-size:.7rem;color:var(--ink-faint);">= forecast × (1−imp) × ${(cfg.redesa*100).toFixed(0)}%</div>
+        </div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);">Total Alunos no Forecast</div>
+          <div style="font-size:1.2rem;font-weight:700;">${fmtNum(alunosTotais)}</div>
+          <div style="font-size:.7rem;color:var(--ink-faint);">EF1 + EF2 · ${ativos.length} municípios ativos</div>
+        </div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+          <div style="font-size:.72rem;color:var(--ink-dim);">Ticket Médio</div>
+          <div style="font-size:1.2rem;font-weight:700;">${alunosTotais > 0 ? fmtMoney(forecastTotal/alunosTotais) : '—'}</div>
+          <div style="font-size:.7rem;color:var(--ink-faint);">forecast / alunos totais</div>
         </div>
       </div>
 
-      <!-- Indicadores / Responsáveis -->
-      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Responsáveis Comerciais (Indicadores)</h2>
+      <!-- Modelo de Remuneração resumido -->
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;margin-bottom:1.5rem;">
+        <div style="font-size:.8rem;font-weight:600;color:var(--ink-dim);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">Distribuição do Faturamento Redesa</div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:.8rem;">
+          ${[
+            ['Apresentador', apres, 'var(--accent)'],
+            ['Consolidador', consol, 'var(--ink-dim)'],
+            ['Gestão', gestao, 'var(--ink)'],
+            ['OPEX', opex, 'var(--ink)'],
+            ['Internalizado', interal, 'var(--ink)'],
+            ['Equipe', equipe, 'var(--gold)'],
+            ['LM', lm_pct, 'var(--gold)'],
+            ['MV', mv_pct, 'var(--gold)'],
+            ['LCM', lcm_in, 'var(--blue)'],
+            ['Edu', edu_pct, 'var(--gold)'],
+            ['Fundo', fundo, 'var(--gold)'],
+          ].map(([n,p,c]) => `
+            <div style="text-align:center;min-width:70px;">
+              <div style="font-weight:700;color:${c};">${(p*100).toFixed(2)}%</div>
+              <div style="color:var(--ink-dim);font-size:.72rem;">${n}</div>
+              <div style="font-size:.72rem;color:var(--accent);">${fmtMoney(redesa*p)}</div>
+            </div>
+          `).join('')}
+          <div style="margin-left:auto;display:flex;align-items:center;">
+            <a href="#" onclick="navigate('configuracoes')" style="font-size:.78rem;color:var(--accent);">Editar percentuais →</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Responsáveis comerciais -->
+      <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Responsáveis Comerciais</h2>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Código</th>
-            <th>Email</th>
+            <th>Telefone</th>
             <th class="num">% Apresentador</th>
             <th class="num">Mun. Ativos</th>
+            <th class="num">Alunos (ativos)</th>
             <th class="num">Forecast (pipeline)</th>
             <th class="num">Comissão Est.</th>
             <th>Ativo</th>
           </tr></thead>
           <tbody>
             ${(indicadores || []).map(i => {
-              const { muns, rec, comissao } = calcIndicador(i);
+              const d = calcIndicador(i);
               return `
                 <tr onclick="editarIndicador('${i.id}')" style="cursor:pointer;">
                   <td><strong>${escapeHtml(i.codigo)}</strong></td>
-                  <td style="font-size:.78rem;color:var(--ink-dim);">${escapeHtml(i.email||'—')}</td>
-                  <td class="num">${((i.percentual_comissao||0)*100).toFixed(1)}%</td>
-                  <td class="num">${muns.length}</td>
-                  <td class="num">${fmtMoney(rec)}</td>
-                  <td class="num" style="font-weight:600;color:var(--accent);">${fmtMoney(comissao)}</td>
+                  <td style="font-size:.78rem;color:var(--ink-dim);">${escapeHtml(i.telefone||'—')}</td>
+                  <td class="num">${((i.percentual_comissao||0)*100).toFixed(2)}%</td>
+                  <td class="num">${d.muns}</td>
+                  <td class="num">${fmtNum(d.alunos)}</td>
+                  <td class="num">${fmtMoney(d.fore)}</td>
+                  <td class="num" style="font-weight:600;color:var(--accent);">${fmtMoney(d.comissao)}</td>
                   <td>${i.ativo ? '<span style="color:var(--accent);">✓</span>' : '—'}</td>
                 </tr>
               `;
@@ -4566,6 +4584,7 @@ async function renderIndicadores() {
     </div>
   `;
 }
+
 
 async function editarIndicador(id) {
   const { data: ind } = await sb.from('indicadores_externos').select('*').eq('id', id).single();
