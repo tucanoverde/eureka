@@ -1026,10 +1026,10 @@ function toDisplayPct(v, def) {
 
 // Etapas do pipeline na ordem correta (planilha)
 const ETAPAS_PIPELINE = ['Prioritaria','SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
-const ETAPAS_ATIVAS   = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
+const ETAPAS_ATIVAS   = ['Prioritaria','SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
 
 // Pesos padrão por etapa (Health!A17) — sobrescritos por Configurações
-const PESOS_ETAPA_DEFAULT = { SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85, Empenho:0.90, Entrega:0.95, Win:1.0 };
+const PESOS_ETAPA_DEFAULT = { Prioritaria:0.15, SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85, Empenho:0.90, Entrega:0.95, Win:1.0 };
 
 // Pesos de conversão por farol (Dashboard!M5:M7) — sobrescritos por Configurações
 const PESOS_FAROL_DEFAULT = { Q:0.30, M:0.15, F:0.05 };
@@ -1048,6 +1048,7 @@ function getCfg() {
     conv_real:  (c.cenarios_conversao||{}).realista     || 0.50,
     conv_cons:  (c.cenarios_conversao||{}).conservador  || 0.25,
     // Pesos por etapa
+    p_prio: normPeso(pf.prioritaria, PESOS_ETAPA_DEFAULT.Prioritaria),
     p_sql:  normPeso(pf.sql,       PESOS_ETAPA_DEFAULT.SQL),
     p_r1:   normPeso(pf.r1,        PESOS_ETAPA_DEFAULT.R1),
     p_r2:   normPeso(pf.r2,        PESOS_ETAPA_DEFAULT.R2),
@@ -1073,6 +1074,7 @@ function calcReceita(m, cfg) {
 function getPesoEtapa(status, cfg) {
   cfg = cfg || getCfg();
   const map = {
+    Prioritaria: cfg.p_prio,
     SQL: cfg.p_sql, R1: cfg.p_r1, R2: cfg.p_r2, R3: cfg.p_r3,
     Licitacao: cfg.p_lic, Empenho: cfg.p_emp, Entrega: cfg.p_ent, Win: cfg.p_win
   };
@@ -1200,7 +1202,8 @@ const state = {
   fonteUpload: null,
   currentPage: 'dashboard',
   currentMunicipio: null,
-  filters: { search: '', uf: '', regiao: '', status: '', farol: '', multiplicador: '' },
+  semanaSelecionada: '',
+  filters: { search: '', uf: '', regiao: '', status: [], farol: '', multiplicador: '' },
   sortBy: 'indicador_performance_ef',
   sortDir: 'desc',
 };
@@ -1362,6 +1365,21 @@ async function loadCoreData() {
     (cfg.data || []).forEach(c => { state.configuracoes[c.chave] = c.valor; });
     state.fontes = fon.data || [];
     state.tracking = trk.data || [];
+
+    // Seed: garantir que a fonte QEdu exista (insert-or-ignore)
+    if (!state.fontes.some(f => f.codigo === 'qedu')) {
+      const { data: qedu } = await sb.from('fontes_dados').upsert({
+        codigo: 'qedu',
+        nome: 'QEdu — Indicadores Educacionais',
+        orgao: 'QEdu / Lemann',
+        url_oficial: 'https://qedu.org.br/',
+        colunas_afetadas: [],
+        status: 'pendente',
+        ano: null,
+      }, { onConflict: 'codigo', ignoreDuplicates: true }).select();
+      if (qedu && qedu.length > 0) state.fontes.push(qedu[0]);
+    }
+
     console.log(`Municípios carregados: ${state.municipios.length}`);
   } catch (e) {
     console.error('Erro ao carregar dados:', e);
@@ -1397,42 +1415,34 @@ function navigate(page) {
 // DASHBOARD
 // ============================================================
 function renderDashboard() {
-  const EF1 = 400, EF2 = 500;
-  const IMPOSTOS = 0.0318, REDESA = 0.50;
-  const _cfg_p = state.configuracoes.pesos_forecast || {}; const PESOS = { SQL: _cfg_p.sql||0.25, R1: _cfg_p.r1||0.30, R2: _cfg_p.r2||0.40, R3: _cfg_p.r3||0.50, Licitacao: _cfg_p.licitacao||0.85 };
-  const ETAPAS = ['SQL','R1','R2','R3','Licitacao'];
+  // Engine unificado — mesma fórmula usada em Health/Tracking/Reunião/Indicadores
+  const cfg = getCfg();
 
-  // Todos os municípios com receita calculada
+  // Todos os municípios com receita bruta calculada
   const todos = state.municipios.map(m => ({
     ...m,
-    rec: (m.ef1_alunos||0)*EF1 + (m.ef2_alunos||0)*EF2
+    rec: calcReceita(m, cfg)
   }));
 
-  // Pipeline ativo
-  const ativos = todos.filter(m => ETAPAS.includes(m.status));
-  const ganhos = todos.filter(m => m.status === 'Ganho');
+  // Pipeline ativo (8 etapas + Prioritaria = 9 etapas)
+  const ativos = todos.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const ganhos = todos.filter(m => m.status === 'Ganho' || m.status === 'Win');
 
-  // KPIs pipeline
-  const receitaPipeline = ativos.reduce((s,m) => s+m.rec, 0);
-  const forecastPipeline = ativos.reduce((s,m) => s+m.rec*(PESOS[m.status]||0.25), 0);
-  const alunosPipeline = ativos.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
+  // KPIs pipeline (alinhados ao engine canônico)
+  const receitaPipeline  = ativos.reduce((s,m) => s+m.rec, 0);
+  const forecastPipeline = ativos.reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
+  const alunosPipeline   = ativos.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
 
   // TAM total (toda a base)
   const tamTotal = todos.reduce((s,m) => s+m.rec, 0);
   const alunosTAM = todos.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
 
-  // Funil por etapa — usar forecast (peso_etapa × peso_farol)
-  const ff = state.configuracoes.pesos_farol || {};
-  const PESOS_F = { Q: normPeso(ff.quente,0.30), M: normPeso(ff.morno,0.15), F: normPeso(ff.frio,0.05) };
-  const stages = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
-  const stageData = stages.map(s => {
+  // Funil por etapa — agora usa peso_etapa apenas (mesma fórmula do resto do sistema)
+  const stageData = ETAPAS_ATIVAS.map(s => {
     const mun = todos.filter(m => m.status === s);
-    const forecast_s = mun.reduce((sum,m) => {
-      const pe = PESOS[m.status]||0.25;
-      const pf = PESOS_F[m.farol]||1.0;
-      return sum + m.rec * pe * pf;
-    }, 0);
-    return { label: s==='Licitacao'?'Licitação':s, count: mun.length, revenue: forecast_s };
+    const forecast_s = mun.reduce((sum,m) => sum + calcReceitaAjustada(m, cfg), 0);
+    const label = s==='Licitacao'?'Licitação' : s==='Prioritaria'?'⭐ Prioritária' : s;
+    return { label, count: mun.length, revenue: forecast_s };
   });
   const maxStage = Math.max(...stageData.map(s => s.count), 1);
 
@@ -1443,10 +1453,9 @@ function renderDashboard() {
     const muns = comFarol.filter(m => m.farol === f);
     const rec = muns.reduce((s,m) => s+m.rec, 0);
     const alunos = muns.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0);
-    const recLiq = rec*(1-IMPOSTOS);
-    const redesa = recLiq*REDESA;
-    const ebitda = redesa*0.18728;
-    porFarol[f] = { count: muns.length, rec, alunos, ebitda,
+    const recLiq = rec*(1-cfg.impostos);
+    const redesa = recLiq*cfg.redesa;
+    porFarol[f] = { count: muns.length, rec, alunos, redesa,
       label: {Q:'Quente',M:'Morno',F:'Frio'}[f],
       cor: {Q:'var(--danger)',M:'var(--warn)',Mo:'var(--gold)',F:'var(--ink-dim)'}[f] };
   });
@@ -1488,7 +1497,7 @@ function renderDashboard() {
     d.score_medio = d.scores.length ? d.scores.reduce((a,b)=>a+b,0)/d.scores.length : 0;
   });
 
-  // Top indicadores
+  // Top indicadores — só mostra quem tem comissão configurada (esconde "a preencher")
   const indMap = {};
   for (const m of ativos) {
     if (!m.indicacao) continue;
@@ -1499,7 +1508,16 @@ function renderDashboard() {
     indMap[m.indicacao].receita += m.rec;
     indMap[m.indicacao].count++;
   }
-  const topIndicadores = Object.entries(indMap).sort((a,b)=>b[1].receita-a[1].receita).slice(0,5);
+  const topIndicadores = Object.entries(indMap)
+    .filter(([_, d]) => d.pct > 0 && d.receita > 0)
+    .sort((a,b)=>b[1].receita*b[1].pct - a[1].receita*a[1].pct)
+    .slice(0,5);
+
+  // Top 10 Prioritárias (substituiu a 2ª lista de Top 10 duplicada)
+  const prioritarias = todos
+    .filter(m => m.status === 'Prioritaria')
+    .sort((a,b) => b.rec - a.rec)
+    .slice(0, 10);
 
   document.getElementById('pageContent').innerHTML = `
     <div class="page-header">
@@ -1650,21 +1668,7 @@ function renderDashboard() {
       <!-- Top municípios -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
         <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Top 10 · Maior receita potencial</h2>
-          ${[...todos].sort((a,b)=>b.rec-a.rec).slice(0,10).map((m,i)=>`
-            <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
-              <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
-                <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
-              </div>
-              <div style="font-size:.82rem;font-weight:600;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
-              ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
-            </div>
-          `).join('')}
-        </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-titulo">Top 10 · Maior Receita Potencial</h2>
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-titulo">Top 10 · Maior receita potencial</h2>
           <div id="top10-lista">
             ${[...todos].sort((a,b)=>b.rec-a.rec).slice(0,10).map((m,i)=>`
               <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
@@ -1677,6 +1681,24 @@ function renderDashboard() {
                 ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
               </div>
             `).join('')}
+          </div>
+        </div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-prio-titulo">⭐ Top 10 · Prioritárias</h2>
+          <div id="top10-prio-lista">
+            ${prioritarias.length === 0
+              ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município marcado como Prioritária. Marque municípios com status <strong>Prioritária</strong> para vê-los aqui.</div>`
+              : prioritarias.map((m,i)=>`
+                <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
+                  <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
+                    <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
+                  </div>
+                  <div style="font-size:.82rem;font-weight:600;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
+                  ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
+                </div>
+              `).join('')}
           </div>
         </div>
       </div>
@@ -1969,23 +1991,17 @@ function renderMunicipios() {
             ${regioes.map(r => `<option value="${escapeHtml(r)}" ${state.filters.regiao===r?'selected':''}>${escapeHtml(r)}</option>`).join('')}
           </select>
         </div>
-        <div class="filter-chip">
-          <select id="filterStatus">
-            <option value="">Todos status</option>
-            <option value="Novo">Novo</option>
-            <option value="Prioritaria">⭐ Prioritária</option>
-            <option value="SQL">SQL</option>
-            <option value="R1">R1</option>
-            <option value="R2">R2</option>
-            <option value="R3">R3</option>
-            <option value="Licitacao">Licitação</option>
-            <option value="Empenho">Empenho</option>
-            <option value="Entrega">Entrega</option>
-            <option value="Win">Win</option>
-                        <option value="Perdido">Perdido</option>
-            <option value="Pausado">Pausado</option>
-            <option value="Nao_Vale_Pena">Não vale a pena</option>
-          </select>
+        <div class="filter-chip" style="padding:4px 6px;flex-wrap:wrap;gap:3px;display:flex;align-items:center;">
+          <span style="font-size:.72rem;color:var(--ink-dim);padding:0 4px;font-weight:600;">STATUS:</span>
+          ${['Novo','Prioritaria','SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win','Perdido','Pausado','Nao_Vale_Pena'].map(s => {
+            const label = s==='Prioritaria'?'⭐ Prio':s==='Licitacao'?'Licit.':s==='Nao_Vale_Pena'?'NV':s;
+            const active = state.filters.status.includes(s);
+            return `<button class="status-toggle" data-status="${s}"
+              style="font:inherit;font-size:.72rem;padding:2px 7px;border:1px solid ${active?'var(--accent)':'var(--line-strong)'};border-radius:3px;background:${active?'var(--accent)':'transparent'};color:${active?'#fff':'var(--ink)'};cursor:pointer;font-weight:${active?'700':'500'};">
+              ${label}
+            </button>`;
+          }).join('')}
+          ${state.filters.status.length > 0 ? `<button id="clearStatus" style="font:inherit;font-size:.7rem;padding:2px 6px;border:none;background:transparent;color:var(--danger);cursor:pointer;text-decoration:underline;">limpar</button>` : ''}
         </div>
         <div class="filter-chip">
           <select id="filterFarol">
@@ -2005,22 +2021,37 @@ function renderMunicipios() {
     </div>
   `;
 
-  ['searchInput','filterUF','filterRegiao','filterStatus','filterFarol','filterMultiplicador'].forEach(id => {
+  ['searchInput','filterUF','filterRegiao','filterFarol','filterMultiplicador'].forEach(id => {
     const el = document.getElementById(id);
+    if (!el) return;
     const ev = (id === 'searchInput' || id === 'filterMultiplicador') ? 'input' : 'change';
     el.addEventListener(ev, () => {
       state.filters.search = document.getElementById('searchInput').value;
       state.filters.uf = document.getElementById('filterUF').value;
       state.filters.regiao = document.getElementById('filterRegiao').value;
-      state.filters.status = document.getElementById('filterStatus').value;
       state.filters.farol = document.getElementById('filterFarol').value;
       state.filters.multiplicador = document.getElementById('filterMultiplicador').value;
       renderTable();
     });
   });
 
+  // Status: chips toggleáveis (multi-select)
+  document.querySelectorAll('.status-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.status;
+      const idx = state.filters.status.indexOf(s);
+      if (idx >= 0) state.filters.status.splice(idx, 1);
+      else state.filters.status.push(s);
+      renderMunicipios(); // re-render para atualizar chips visuais
+    });
+  });
+  const clearBtn = document.getElementById('clearStatus');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    state.filters.status = [];
+    renderMunicipios();
+  });
+
   // Aplica filtros iniciais
-  document.getElementById('filterStatus').value = state.filters.status;
   document.getElementById('filterFarol').value = state.filters.farol;
 
   renderTable();
@@ -2029,7 +2060,9 @@ function renderMunicipios() {
 function getFilteredMunicipios() {
   const repasseEF1 = state.configuracoes.repasse_aluno_ef1 || 400;
   const repasseEF2 = state.configuracoes.repasse_aluno_ef2 || 500;
-  const mult = parseFloat(state.filters.multiplicador);
+  // Aceita vírgula brasileira (1,5) ou ponto (1.5)
+  const multStr = String(state.filters.multiplicador || '').trim().replace(',', '.');
+  const mult = parseFloat(multStr);
   const multValido = !isNaN(mult) && mult > 0;
 
   let items = state.municipios.map(m => {
@@ -2052,7 +2085,10 @@ function getFilteredMunicipios() {
   }
   if (f.uf) items = items.filter(m => m.uf === f.uf);
   if (f.regiao) items = items.filter(m => m.regiao_administrativa === f.regiao);
-  if (f.status) items = items.filter(m => m.status === f.status);
+  if (Array.isArray(f.status) ? f.status.length > 0 : f.status) {
+    const arr = Array.isArray(f.status) ? f.status : [f.status];
+    items = items.filter(m => arr.includes(m.status));
+  }
   if (f.farol) items = items.filter(m => m.farol === f.farol);
 
   // Sort
@@ -2862,13 +2898,18 @@ function renderHealth() {
 
   const recFarol = (f) => ativos.filter(m => m.farol === f).reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
   const recQ = recFarol('Q'), recM = recFarol('M'), recF = recFarol('F');
+  // "Sem farol" = ativos sem classificação de farol (entra no global mas não em Q/M/F)
+  const recSem = ativos.filter(m => !m.farol || (m.farol !== 'Q' && m.farol !== 'M' && m.farol !== 'F'))
+                      .reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
 
   const infoFarol = (f) => {
-    const muns = ativos.filter(m => m.farol === f);
+    const muns = f === 'SEM'
+      ? ativos.filter(m => !m.farol || (m.farol !== 'Q' && m.farol !== 'M' && m.farol !== 'F'))
+      : ativos.filter(m => m.farol === f);
     return {
       count: muns.length,
       alunos: muns.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0),
-      tempoMedio: tmFarol[f] || 0
+      tempoMedio: f === 'SEM' ? 0 : (tmFarol[f] || 0)
     };
   };
 
@@ -2906,13 +2947,14 @@ function renderHealth() {
       </div>`;
   });
 
-  // Gerar HTML dos cenários por farol
-  const farolLabel = { Q:'Quente', M:'Morno', F:'Frio' };
-  const farolCor   = { Q:'var(--danger)', M:'var(--warn)', F:'var(--blue)' };
+  // Gerar HTML dos cenários por farol — inclui "Sem farol" pra somar ao global
+  const farolLabel = { Q:'Quente', M:'Morno', F:'Frio', SEM:'Sem farol' };
+  const farolCor   = { Q:'var(--danger)', M:'var(--warn)', F:'var(--blue)', SEM:'var(--ink-dim)' };
   let htmlFarol = '';
-  ['Q','M','F'].forEach(f => {
+  const farois = recSem > 0 ? ['Q','M','F','SEM'] : ['Q','M','F'];
+  farois.forEach(f => {
     const info = infoFarol(f);
-    const rec = { Q: recQ, M: recM, F: recF }[f];
+    const rec = { Q: recQ, M: recM, F: recF, SEM: recSem }[f];
     const cens = calcCenarios(rec, cfg);
     let htmlCensFarol = '';
     ['agressivo','realista','conservador'].forEach(c => {
@@ -3005,8 +3047,9 @@ function renderHealth() {
       </div>
 
       <div style="margin-bottom:1.5rem;">
-        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Cenários Potencial Total por Farol</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">${htmlFarol}</div>
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:.25rem;">Cenários Potencial Total por Farol</h2>
+        <p style="font-size:.75rem;color:var(--ink-dim);margin-bottom:1rem;">Q + M + F${recSem>0?' + Sem farol':''} = Cenários Globais. Total: ${fmtMoney(recQ+recM+recF+recSem)} ${Math.abs((recQ+recM+recF+recSem)-forecastAjustado)<1?'✅':'⚠️ diferença vs forecast: '+fmtMoney(forecastAjustado-(recQ+recM+recF+recSem))}</p>
+        <div style="display:grid;grid-template-columns:repeat(${farois.length},1fr);gap:1rem;">${htmlFarol}</div>
       </div>
 
       <div style="margin-bottom:1.5rem;">
@@ -3052,13 +3095,15 @@ async function renderTracking() {
   const tmFarol = calcTempoMedioFarol(state.municipios);
 
   // Eficiência atual = mediana de (receita_ajustada / dias_na_etapa)
+  // dias mínimo = 1 para não filtrar municípios que entraram na etapa hoje
   const eficiencias = ativos
     .map(m => {
       const hoje = new Date();
-      const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao }[m.status];
-      const dias = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 1);
+      const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+      const diasRaw = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 0);
+      const dias = Math.max(1, diasRaw);
       const rec = calcReceitaAjustada(m, cfg);
-      return dias > 0 ? rec / dias : 0;
+      return rec > 0 ? rec / dias : 0;
     })
     .filter(e => e > 0)
     .sort((a,b) => a-b);
@@ -3071,10 +3116,25 @@ async function renderTracking() {
   }).filter(t => t > 0).sort((a,b) => a-b);
   const ticketAtual = tickets.length > 0 ? tickets[Math.floor(tickets.length/2)] : 0;
 
-  // Gargalo = etapa com mais municípios
+  // Gargalo = etapa com maior "tempo desperdiçado" = qtde × tempo_médio_na_etapa
+  // Mede onde mais municípios estão parados há mais tempo (não apenas onde tem mais municípios)
   const contEtapa = {};
-  ETAPAS_ATIVAS.forEach(e => { contEtapa[e] = ativos.filter(m => m.status === e).length; });
-  const gargalo = Object.entries(contEtapa).sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
+  const tempoMedioPorEtapa = {};
+  ETAPAS_ATIVAS.forEach(e => {
+    const muns = ativos.filter(m => m.status === e);
+    contEtapa[e] = muns.length;
+    const hoje = new Date();
+    const tempos = muns.map(m => {
+      const d = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+      return d ? Math.floor((hoje - new Date(d)) / 86400000) : (m.tempo_na_etapa || 0);
+    }).filter(t => t > 0);
+    tempoMedioPorEtapa[e] = tempos.length > 0 ? tempos.reduce((a,b)=>a+b,0)/tempos.length : 0;
+  });
+  // Exclui Win e Prioritaria do cálculo de gargalo (são "estados estáveis" ou pré-funil)
+  const etapasGargalo = ETAPAS_ATIVAS.filter(e => e !== 'Win' && e !== 'Prioritaria');
+  const gargalo = etapasGargalo
+    .map(e => ({ etapa: e, score: contEtapa[e] * tempoMedioPorEtapa[e] }))
+    .sort((a,b) => b.score - a.score)[0]?.etapa || '—';
 
   // Dados da semana atual (snapshot)
   const semanaAtual = {
@@ -3084,6 +3144,7 @@ async function renderTracking() {
     quente: ativos.filter(m => m.farol === 'Q').length,
     medio: ativos.filter(m => m.farol === 'M' || m.farol === 'Mo').length,
     morno: ativos.filter(m => m.farol === 'M').length,
+    frio: ativos.filter(m => m.farol === 'F').length,
     sql: ativos.filter(m => m.status === 'SQL').length,
     r1: ativos.filter(m => m.status === 'R1').length,
     r2: ativos.filter(m => m.status === 'R2').length,
@@ -3155,7 +3216,7 @@ async function renderTracking() {
         <td class="num">${t.municipios_ativos||0}</td>
         <td class="num">${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia) : '—'}</td>
         <td class="num">${fmtDeltaVal(dEfic)}</td>
-        <td class="num">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${(t.municipios_ativos||0)-(t.quente||0)-(t.morno||0)} 🔵</td>
+        <td class="num">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${t.frio||0} 🔵</td>
         <td class="num">${t.sql||0}</td>
         <td class="num">${t.r1||0}</td>
         <td class="num">${t.r2||0}</td>
@@ -3252,9 +3313,11 @@ async function registrarSemana() {
 
   const eficiencias = ativos.map(m => {
     const hoje = new Date();
-    const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao }[m.status];
-    const dias = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : 1;
-    return dias > 0 ? calcReceitaAjustada(m, cfg) / dias : 0;
+    const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+    const diasRaw = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 0);
+    const dias = Math.max(1, diasRaw);
+    const rec = calcReceitaAjustada(m, cfg);
+    return rec > 0 ? rec / dias : 0;
   }).filter(e => e > 0).sort((a,b) => a-b);
   const eficMediana = eficiencias.length > 0 ? eficiencias[Math.floor(eficiencias.length/2)] : 0;
 
@@ -3264,9 +3327,23 @@ async function registrarSemana() {
   }).filter(t => t > 0).sort((a,b) => a-b);
   const ticketMediana = tickets.length > 0 ? tickets[Math.floor(tickets.length/2)] : 0;
 
+  // Gargalo = etapa com maior tempo desperdiçado (qtde × tempo_médio)
   const contEtapa = {};
-  ETAPAS_ATIVAS.forEach(e => { contEtapa[e] = ativos.filter(m => m.status === e).length; });
-  const gargalo = Object.entries(contEtapa).sort((a,b) => b[1]-a[1])[0]?.[0] || null;
+  const tempoMedio = {};
+  ETAPAS_ATIVAS.forEach(e => {
+    const muns = ativos.filter(m => m.status === e);
+    contEtapa[e] = muns.length;
+    const hoje = new Date();
+    const tempos = muns.map(m => {
+      const d = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
+      return d ? Math.floor((hoje - new Date(d)) / 86400000) : (m.tempo_na_etapa || 0);
+    }).filter(t => t > 0);
+    tempoMedio[e] = tempos.length > 0 ? tempos.reduce((a,b)=>a+b,0)/tempos.length : 0;
+  });
+  const gargalo = ETAPAS_ATIVAS
+    .filter(e => e !== 'Win' && e !== 'Prioritaria')
+    .map(e => ({ etapa: e, score: contEtapa[e] * tempoMedio[e] }))
+    .sort((a,b) => b.score - a.score)[0]?.etapa || null;
 
   const { error } = await sb.from('pipeline_tracking').insert({
     semana: semana.trim().toUpperCase(),
@@ -3275,6 +3352,7 @@ async function registrarSemana() {
     eficiencia_dia: eficMediana,
     quente: ativos.filter(m => m.farol === 'Q').length,
     morno: ativos.filter(m => m.farol === 'M').length,
+    frio: ativos.filter(m => m.farol === 'F').length,
     sql: contEtapa['SQL'] || 0,
     r1: contEtapa['R1'] || 0,
     r2: contEtapa['R2'] || 0,
@@ -3296,18 +3374,48 @@ async function registrarSemana() {
 // ============================================================
 // REUNIÃO SEMANAL
 // ============================================================
+
+// Salva um campo do município direto na tabela 'municipios'.
+// Usado pelos inputs/textareas da Reunião Semanal (próxima ação, bloqueio, responsável etc.).
+async function salvarCampoRapido(municipioId, campo, valor) {
+  const v = (valor === '' || valor == null) ? null : valor;
+  const { data, error } = await sb.from('municipios')
+    .update({ [campo]: v, atualizado_por: state.user.id })
+    .eq('id', municipioId)
+    .select()
+    .single();
+  if (error) {
+    showSaveIndicator('error', 'Erro ao salvar');
+    console.error('salvarCampoRapido', campo, error);
+    return;
+  }
+  const idx = state.municipios.findIndex(m => m.id === municipioId);
+  if (idx !== -1) state.municipios[idx] = data;
+  showSaveIndicator('saved', 'Salvo');
+}
+
+// Auto-resize de textarea: ajusta altura ao conteúdo (mínimo 3 linhas)
+function autoSizeTextarea(t) {
+  t.style.height = 'auto';
+  const min = parseFloat(getComputedStyle(t).lineHeight) * 3 + 12;
+  t.style.height = Math.max(min, t.scrollHeight) + 'px';
+}
+
 async function renderReuniao() {
   const cfg = getCfg();
-  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  // Operacional: exclui Prioritaria (pre-engajamento, não entra na reunião semanal)
+  const ativos = state.municipios.filter(m =>
+    ETAPAS_ATIVAS.includes(m.status) && m.status !== 'Prioritaria'
+  );
   const tmFarol = calcTempoMedioFarol(state.municipios);
 
   // Buscar semanas salvas
   const { data: historico } = await sb.from('reuniao_semanal').select('*').order('criado_em', { ascending: false });
   const semanasSalvas = historico || [];
 
-  // Semana atual selecionada (padrão = mais recente ou nova)
-  const semanaAtual = semanasSalvas.length > 0 ? semanasSalvas[0].semana : null;
   const semanasUnicas = [...new Set(semanasSalvas.map(r => r.semana))];
+  // Semana selecionada: '' = semana atual (campos do município direto)
+  const semanaSelecionada = state.semanaSelecionada || '';
 
   // Estado atual do pipeline
   const rows = ativos.map(m => {
@@ -3319,8 +3427,8 @@ async function renderReuniao() {
     const acao = calcAcao(m, health);
     const receita = calcReceita(m, cfg);
     const recAdj = calcReceitaAjustada(m, cfg);
-    // Buscar registro da semana atual para este município
-    const reg = semanaAtual ? semanasSalvas.find(r => r.semana === semanaAtual && r.municipio_id === m.id) : null;
+    // Buscar registro da semana selecionada para este município
+    const reg = semanaSelecionada ? semanasSalvas.find(r => r.semana === semanaSelecionada && r.municipio_id === m.id) : null;
     return { ...m, tempoEtapa, health, velocity, acao, receita, recAdj, reg };
   }).sort((a,b) => {
     const order = ETAPAS_PIPELINE;
@@ -3337,9 +3445,9 @@ async function renderReuniao() {
         <h1><em>Reunião Semanal</em></h1>
       </div>
       <div class="actions" style="display:flex;gap:.75rem;align-items:center;">
-        <select id="semanaSelect" style="font:inherit;font-size:.85rem;background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:6px 12px;color:var(--ink);">
-          <option value="">— Semana atual —</option>
-          ${semanasUnicas.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}
+        <select id="semanaSelect" onchange="verSemana(this.value)" style="font:inherit;font-size:.85rem;background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:6px 12px;color:var(--ink);">
+          <option value="" ${!semanaSelecionada?'selected':''}>— Semana atual —</option>
+          ${semanasUnicas.map(s => `<option value="${escapeHtml(s)}" ${semanaSelecionada===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
         </select>
         <button class="btn primary" onclick="registrarSemanaReuniao()">📋 Registrar semana</button>
       </div>
@@ -3402,27 +3510,33 @@ async function renderReuniao() {
                   <td class="num">${m.velocity.toFixed(2)}</td>
                   <td style="font-size:.72rem;font-weight:600;color:${m.acao==='Agir Hoje'||m.acao==='Cobrar'?'var(--danger)':m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'};">${m.acao}</td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="1" placeholder="Próxima ação..."
-                      style="width:100%;min-width:140px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);resize:none;overflow:hidden;"
-                      onfocus="this.rows=4;this.style.overflow='auto'" onblur="this.rows=1;this.style.overflow='hidden'"
+                    <textarea rows="3" placeholder="Próxima ação..."
+                      style="width:100%;min-width:160px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);resize:vertical;line-height:1.4;"
+                      oninput="autoSizeTextarea(this)"
+                      onfocus="this.style.minHeight='90px';this.style.borderColor='var(--accent)'"
+                      onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
                       onchange="salvarCampoRapido('${m.id}','proxima_acao',this.value)">${escapeHtml(m.reg?.proxima_acao||m.proxima_acao||'')}</textarea>
                   </td>
                   <td style="padding:2px 4px;"><input type="date" value="${m.reg?.data_proxima_acao||m.data_proxima_acao||''}"
                     style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
                     onchange="salvarCampoRapido('${m.id}','data_proxima_acao',this.value)"></td>
-                  <td style="padding:2px 4px;"><input type="text" value="${escapeHtml(m.reg?.responsavel||m.responsavel||'')}" placeholder="Responsável..."
+                  <td style="padding:2px 4px;"><input type="text" list="resp-options" value="${escapeHtml(m.reg?.responsavel||m.responsavel||'')}" placeholder="Responsável..."
                     style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
                     onchange="salvarCampoRapido('${m.id}','responsavel',this.value)"></td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="1" placeholder="Bloqueio..."
-                      style="width:100%;min-width:120px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--danger);resize:none;overflow:hidden;"
-                      onfocus="this.rows=4;this.style.overflow='auto'" onblur="this.rows=1;this.style.overflow='hidden'"
+                    <textarea rows="3" placeholder="Bloqueio..."
+                      style="width:100%;min-width:140px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--danger);resize:vertical;line-height:1.4;"
+                      oninput="autoSizeTextarea(this)"
+                      onfocus="this.style.minHeight='90px';this.style.borderColor='var(--danger)'"
+                      onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
                       onchange="salvarCampoRapido('${m.id}','bloqueio',this.value)">${escapeHtml(m.reg?.bloqueio||m.bloqueio||'')}</textarea>
                   </td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="1" placeholder="Fechamento..."
-                      style="width:100%;min-width:130px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--accent);resize:none;overflow:hidden;"
-                      onfocus="this.rows=4;this.style.overflow='auto'" onblur="this.rows=1;this.style.overflow='hidden'"
+                    <textarea rows="3" placeholder="Fechamento..."
+                      style="width:100%;min-width:150px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--accent);resize:vertical;line-height:1.4;"
+                      oninput="autoSizeTextarea(this)"
+                      onfocus="this.style.minHeight='90px';this.style.borderColor='var(--accent)'"
+                      onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
                       onchange="salvarFechamentoSemana('${m.id}', this.value)">${escapeHtml(m.reg?.fechamento_semana||'')}</textarea>
                   </td>
                 </tr>
@@ -3434,11 +3548,15 @@ async function renderReuniao() {
       <!-- Histórico de semanas -->
       ${semanasUnicas.length > 0 ? `
       <div style="margin-top:1.5rem;">
-        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Histórico Semanal</h2>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Histórico Semanal ${semanaSelecionada?`<span style="font-size:.8rem;font-weight:400;color:var(--accent);">· vendo <strong>${escapeHtml(semanaSelecionada)}</strong></span>`:''}</h2>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;">
+          <button onclick="verSemana('')"
+            style="font:inherit;font-size:.8rem;padding:4px 12px;border:1px solid ${!semanaSelecionada?'var(--accent)':'var(--line)'};border-radius:4px;background:${!semanaSelecionada?'var(--accent)':'var(--bg-elev)'};color:${!semanaSelecionada?'#fff':'var(--ink)'};cursor:pointer;font-weight:${!semanaSelecionada?'700':'500'};">
+            Semana atual
+          </button>
           ${semanasUnicas.map(s => `
             <button onclick="verSemana('${escapeHtml(s)}')"
-              style="font:inherit;font-size:.8rem;padding:4px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg-elev);cursor:pointer;">
+              style="font:inherit;font-size:.8rem;padding:4px 12px;border:1px solid ${semanaSelecionada===s?'var(--accent)':'var(--line)'};border-radius:4px;background:${semanaSelecionada===s?'var(--accent)':'var(--bg-elev)'};color:${semanaSelecionada===s?'#fff':'var(--ink)'};cursor:pointer;font-weight:${semanaSelecionada===s?'700':'500'};">
               ${escapeHtml(s)}
             </button>
           `).join('')}
@@ -3446,7 +3564,19 @@ async function renderReuniao() {
       </div>` : ''}
 
     </div>
+
+    <!-- Datalist global para autocomplete de Responsável -->
+    <datalist id="resp-options">
+      <option value="REDESA"></option>
+      <option value="EUREKA"></option>
+      <option value="REDESA-EUREKA"></option>
+    </datalist>
   `;
+
+  // Auto-resize inicial dos textareas para mostrar o conteúdo já preenchido
+  setTimeout(() => {
+    document.querySelectorAll('#pageContent textarea').forEach(t => autoSizeTextarea(t));
+  }, 0);
 }
 
 async function registrarSemanaReuniao() {
@@ -3488,8 +3618,7 @@ async function salvarFechamentoSemana(municipioId, valor) {
 }
 
 function verSemana(semana) {
-  document.getElementById('semanaSelect').value = semana;
-  // Recarregar com filtro da semana selecionada
+  state.semanaSelecionada = semana || '';
   renderReuniao();
 }
 
@@ -4684,6 +4813,7 @@ function renderConfiguracoes() {
       <div class="section-title">Pesos de Forecast por Etapa (%)</div>
       <div class="message">Probabilidade de conversão por etapa — replicado de Health!A17. Use 2 casas decimais.</div>
       <div class="form-grid">
+        <div class="field"><label>⭐ Prioritária (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.prioritaria" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).prioritaria, 0.15)}"></div>
         <div class="field"><label>SQL (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.sql" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).sql, 0.25)}"></div>
         <div class="field"><label>R1 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r1" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).r1, 0.30)}"></div>
         <div class="field"><label>R2 (%)</label><input type="number" step="0.01" min="0" max="100" data-cfg-nested="pesos_forecast.r2" value="${toDisplayPct((state.configuracoes.pesos_forecast||{}).r2, 0.40)}"></div>
