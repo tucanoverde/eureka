@@ -1644,19 +1644,21 @@ function renderDashboard() {
             </tr>
           </thead>
           <tbody>
-            ${regioesSorted.map(([nome, r]) => `
-              <tr style="border-bottom:1px solid var(--line);">
-                <td style="padding:.6rem .75rem;font-weight:600;">${escapeHtml(nome)}</td>
-                <td style="padding:.6rem .75rem;text-align:right;color:var(--ink-dim);">${r.count}</td>
-                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;">${fmtNum(r.tam_ef1)}</td>
-                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;">${fmtNum(r.tam_ef2)}</td>
-                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;">${fmtNum(r.som_ef1+r.som_ef2)}</td>
-                <td style="padding:.6rem .75rem;text-align:right;font-size:.8rem;color:var(--ink-dim);">
-                  ${r.tam > 0 ? ((r.som_ef1+r.som_ef2)/r.tam*100).toFixed(1)+'%' : '—'}
+            ${regioesSorted.map(([nome, r]) => {
+              const pen = r.tam > 0 ? ((r.som_ef1+r.som_ef2)/r.tam*100) : 0;
+              return `
+              <tr style="border-bottom:1px solid var(--line);" title="${escapeHtml(nome)}: ${r.count} municípios · TAM total ${fmtNum(r.tam)} alunos · SOM ${fmtNum(r.som_ef1+r.som_ef2)} alunos (com farol) · Penetração ${pen.toFixed(1)}% · Receita ${fmtMoney(r.rec)}">
+                <td style="padding:.6rem .75rem;font-weight:600;" title="Nome da região administrativa">${escapeHtml(nome)}</td>
+                <td style="padding:.6rem .75rem;text-align:right;color:var(--ink-dim);" title="Quantidade total de municípios na base que pertencem à região ${escapeHtml(nome)}.">${r.count}</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;" title="TAM EF1 = SOMA(ef1_alunos) de todos os ${r.count} municípios da região = ${fmtNum(r.tam_ef1)} alunos.">${fmtNum(r.tam_ef1)}</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;" title="TAM EF2 = SOMA(ef2_alunos) de todos os ${r.count} municípios = ${fmtNum(r.tam_ef2)} alunos.">${fmtNum(r.tam_ef2)}</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-family:JetBrains Mono,monospace;font-size:.8rem;" title="SOM Alunos = SOMA(ef1+ef2) APENAS dos municípios com farol classificado (mercado obtenível). Aqui: ${fmtNum(r.som_ef1+r.som_ef2)}.">${fmtNum(r.som_ef1+r.som_ef2)}</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-size:.8rem;color:var(--ink-dim);" title="Penetração = Alunos SOM (${fmtNum(r.som_ef1+r.som_ef2)}) ÷ TAM total (${fmtNum(r.tam)}) × 100 = ${pen.toFixed(1)}%. Quanto da região já está sendo trabalhada.">
+                  ${r.tam > 0 ? pen.toFixed(1)+'%' : '—'}
                 </td>
-                <td style="padding:.6rem .75rem;text-align:right;font-weight:600;color:var(--accent);">${fmtMoney(r.rec)}</td>
+                <td style="padding:.6rem .75rem;text-align:right;font-weight:600;color:var(--accent);" title="Receita Estimada = SOMA(ef1×ticket_EF1 + ef2×ticket_EF2) apenas dos municípios com farol classificado = ${fmtMoney(r.rec)}. Não aplica peso de etapa.">${fmtMoney(r.rec)}</td>
               </tr>
-            `).join('')}
+            `;}).join('')}
             <tr style="background:var(--accent-soft);font-weight:700;border-top:2px solid var(--accent);">
               <td style="padding:.6rem .75rem;">TOTAL</td>
               <td style="padding:.6rem .75rem;text-align:right;">${regioesSorted.reduce((s,[,r])=>s+r.count,0)}</td>
@@ -2183,26 +2185,33 @@ function renderTable() {
         }).join('')}
       </tr></thead>
       <tbody>
-        ${items.map(m => `
+        ${items.map(m => {
+          const cfgR = getCfg();
+          const ps = state.configuracoes.pesos_score || {};
+          const wIdeb = ps.ideb || 0.35, wSaeb = ps.saeb || 0.35, wEva = ps.evasao || 0.30;
+          const multUsado = state.filters.multiplicador && parseFloat(String(state.filters.multiplicador).replace(',','.')) > 0;
+          const multValor = multUsado ? parseFloat(String(state.filters.multiplicador).replace(',','.')) : 1;
+          const farolNome = {Q:'Quente', M:'Morno', Mo:'Médio', F:'Frio', NV:'Não Vale'}[m.farol] || m.farol;
+          return `
           <tr data-id="${m.id}">
-            <td><strong>${escapeHtml(m.municipio)}</strong></td>
-            <td>${escapeHtml(m.uf || '—')}</td>
-            <td>${escapeHtml(m.regiao_administrativa || '—')}</td>
-            <td class="num">${fmtNum(m.total_ef)}</td>
-            <td class="num">${fmtMoney(m.receita_potencial)}</td>
-            <td class="num">
+            <td title="${escapeHtml(m.municipio)} (${m.uf||''}) · IBGE ${m.codigo_ibge||'—'} · População 2022: ${m.populacao_2022 ? fmtNum(m.populacao_2022) : '—'}. Clique para abrir a ficha completa."><strong>${escapeHtml(m.municipio)}</strong></td>
+            <td title="Unidade Federativa">${escapeHtml(m.uf || '—')}</td>
+            <td title="Região administrativa estadual">${escapeHtml(m.regiao_administrativa || '—')}</td>
+            <td class="num" title="Alunos EF Total = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}. Fonte: INEP Censo Escolar.">${fmtNum(m.total_ef)}</td>
+            <td class="num" title="Receita Potencial = ef1 × R$${cfgR.ef1} (${fmtMoney((m.ef1_alunos||0)*cfgR.ef1)}) + ef2 × R$${cfgR.ef2} (${fmtMoney((m.ef2_alunos||0)*cfgR.ef2)})${cfgR.ei>0?` + ei × R$${cfgR.ei} (${fmtMoney((m.ei_alunos||0)*cfgR.ei)})`:''}${multUsado?` × ${multValor.toFixed(2)} (multiplicador do filtro)`:''} = ${fmtMoney(m.receita_potencial)}. Não aplica peso de etapa.">${fmtMoney(m.receita_potencial)}</td>
+            <td class="num" title="${m.indicador_performance_ef != null ? `Score Educacional = ${fmtNum(m.indicador_performance_ef, 2)} (escala 0-10). Composto: IDEB×${(wIdeb*100).toFixed(0)}% + SAEB×${(wSaeb*100).toFixed(0)}% + (1−Evasão)×${(wEva*100).toFixed(0)}%. Dados do município: IDEB EF1 ${m.ideb_ef1?fmtNum(m.ideb_ef1,1):'—'}, SAEB EF1 ${m.saeb_ef1?fmtNum(m.saeb_ef1,1):'—'}, Aprovação ${m.aprovacao_ef?fmtNum(m.aprovacao_ef,1)+'%':'—'}. Pesos configuráveis em Configurações.` : 'Score Educacional ainda não calculado para este município.'}">
               ${m.indicador_performance_ef != null ? `
                 <span class="score-bar"><span class="score-bar-fill" style="transform: scaleX(${Math.min(m.indicador_performance_ef, 10) / 10})"></span></span>
                 ${fmtNum(m.indicador_performance_ef, 2)}
               ` : '—'}
             </td>
-            <td class="num">${m.idhm != null ? fmtNum(m.idhm, 3) : '—'}</td>
-            <td>${m.farol ? `<span class="pill farol-${m.farol}">${escapeHtml(m.farol)}</span>` : '—'}</td>
-            <td>${m.status ? `<span class="pill status-${m.status}">${escapeHtml(m.status)}</span>` : '—'}</td>
-            <td>${escapeHtml(m.indicacao || '—')}</td>
-            <td>${escapeHtml(m.prefeito || '—')}</td>
+            <td class="num" title="${m.idhm != null ? `IDHM = ${fmtNum(m.idhm, 3)} (PNUD 2010). Combina renda + educação + longevidade. Escala 0-1. Faixas: ≥0.8 Muito Alto, 0.7-0.8 Alto, 0.6-0.7 Médio, <0.6 Baixo.` : 'IDHM não importado para este município.'}">${m.idhm != null ? fmtNum(m.idhm, 3) : '—'}</td>
+            <td title="${m.farol ? `Farol ${farolNome}. Classificação manual de prioridade comercial. Q=Quente (alta), M=Morno (média), F=Frio (baixa), NV=Não vale a pena.` : 'Farol não classificado. Defina na ficha do município (aba Comercial).'}">${m.farol ? `<span class="pill farol-${m.farol}">${escapeHtml(m.farol)}</span>` : '—'}</td>
+            <td title="${m.status ? `Status: ${m.status==='Licitacao'?'Licitação':m.status}. Etapa atual no funil de vendas. Peso de conversão configurável: SQL 25%, R1 30%, R2 40%, R3 50%, Licitação 85%, Empenho 90%, Entrega 95%, Win 100%.` : 'Sem status. Defina na ficha do município.'}">${m.status ? `<span class="pill status-${m.status}">${escapeHtml(m.status)}</span>` : '—'}</td>
+            <td title="${m.indicacao ? `Código do responsável: ${m.indicacao}. Veja % de comissão em Indicadores.` : 'Sem responsável atribuído.'}">${escapeHtml(m.indicacao || '—')}</td>
+            <td title="${m.prefeito ? `Prefeito(a) eleito(a) 2024. Partido: ${m.partido_prefeito||m.prefeito_partido||'—'}. Fonte: TSE.` : 'Nome do prefeito não importado.'}">${escapeHtml(m.prefeito || '—')}</td>
           </tr>
-        `).join('')}
+        `;}).join('')}
       </tbody>
     </table>
   `;
@@ -3264,24 +3273,25 @@ async function renderTracking() {
     const prev = i > 0 ? state.tracking[i-1] : null;
     const dRec = prev && prev.receita_potencial > 0 ? (t.receita_potencial - prev.receita_potencial) / prev.receita_potencial : null;
     const dEfic = prev && prev.eficiencia_dia > 0 ? (t.eficiencia_dia - prev.eficiencia_dia) / prev.eficiencia_dia : null;
+    const totalFar = (t.quente||0) + (t.morno||0) + (t.frio||0);
     htmlTabela += `
-      <tr>
-        <td style="font-weight:700;">${t.semana}</td>
-        <td>${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
-        <td class="num">${fmtMoney(t.receita_potencial||0)}</td>
-        <td class="num">${fmtDeltaVal(dRec)}</td>
-        <td class="num">${t.municipios_ativos||0}</td>
-        <td class="num">${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia) : '—'}</td>
-        <td class="num">${fmtDeltaVal(dEfic)}</td>
-        <td class="num">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${t.frio||0} 🔵</td>
-        <td class="num">${t.sql||0}</td>
-        <td class="num">${t.r1||0}</td>
-        <td class="num">${t.r2||0}</td>
-        <td class="num">${t.r3||0}</td>
-        <td class="num">${t.licitacao||0}</td>
-        <td class="num">${t.velocity > 0 ? t.velocity.toFixed(2)+'v' : '—'}</td>
-        <td class="num">${t.ticket_medio > 0 ? fmtMoney(t.ticket_medio) : '—'}</td>
-        <td>${escapeHtml(t.gargalo||'—')}</td>
+      <tr title="Semana ${t.semana}: snapshot do pipeline em ${t.data_registro ? new Date(t.data_registro).toLocaleString('pt-BR') : '—'}. Receita ${fmtMoney(t.receita_potencial||0)} · ${t.municipios_ativos||0} municípios · Eficiência ${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia)+'/dia' : '—'} · Gargalo: ${t.gargalo||'—'}">
+        <td style="font-weight:700;" title="Identificador da semana (ex: W18).">${t.semana}</td>
+        <td title="Data e hora em que esta semana foi registrada.">${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
+        <td class="num" title="Receita Potencial = Forecast Ajustado da semana = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS na época do registro = ${fmtMoney(t.receita_potencial||0)}.">${fmtMoney(t.receita_potencial||0)}</td>
+        <td class="num" title="${dRec !== null ? `Δ Receita = (${fmtMoney(t.receita_potencial)} - ${fmtMoney(prev.receita_potencial)}) ÷ ${fmtMoney(prev.receita_potencial)} = ${(dRec*100).toFixed(1)}% vs semana anterior (${prev.semana}).` : 'Sem semana anterior para comparar.'}">${fmtDeltaVal(dRec)}</td>
+        <td class="num" title="${t.municipios_ativos||0} municípios em ETAPAS_ATIVAS na época deste snapshot.">${t.municipios_ativos||0}</td>
+        <td class="num" title="${t.eficiencia_dia > 0 ? `Eficiência = mediana de (receita_ajustada ÷ dias na etapa) entre os ativos = ${fmtMoney(t.eficiencia_dia)}/dia. Quanto maior, mais receita produzida por dia parado em pipeline.` : 'Eficiência não calculada nesta semana (sem dados de tempo).'}">${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia) : '—'}</td>
+        <td class="num" title="${dEfic !== null ? `Δ Eficiência = (${fmtMoney(t.eficiencia_dia)} - ${fmtMoney(prev.eficiencia_dia)}) ÷ ${fmtMoney(prev.eficiencia_dia)} = ${(dEfic*100).toFixed(1)}% vs ${prev.semana}.` : 'Sem semana anterior.'}">${fmtDeltaVal(dEfic)}</td>
+        <td class="num" title="Distribuição de faróis na semana: 🔴 Quente ${t.quente||0} (${totalFar>0?((t.quente||0)/totalFar*100).toFixed(0):0}%) · 🟡 Morno ${t.morno||0} · 🔵 Frio ${t.frio||0}. Total com farol: ${totalFar}.">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${t.frio||0} 🔵</td>
+        <td class="num" title="${t.sql||0} municípios em SQL na semana.">${t.sql||0}</td>
+        <td class="num" title="${t.r1||0} municípios em R1 na semana.">${t.r1||0}</td>
+        <td class="num" title="${t.r2||0} municípios em R2.">${t.r2||0}</td>
+        <td class="num" title="${t.r3||0} municípios em R3.">${t.r3||0}</td>
+        <td class="num" title="${t.licitacao||0} municípios em Licitação.">${t.licitacao||0}</td>
+        <td class="num" title="${t.velocity > 0 ? `Velocity = (tempo_médio Q + M + F) ÷ 3 = ${t.velocity.toFixed(2)} dias médios por farol. Indicador agregado de velocidade do pipeline.` : 'Velocity não calculada.'}">${t.velocity > 0 ? t.velocity.toFixed(2)+'v' : '—'}</td>
+        <td class="num" title="${t.ticket_medio > 0 ? `Ticket Médio = mediana de (receita por aluno) entre os ativos = ${fmtMoney(t.ticket_medio)}/aluno na semana.` : 'Ticket Médio não calculado.'}">${t.ticket_medio > 0 ? fmtMoney(t.ticket_medio) : '—'}</td>
+        <td title="${t.gargalo ? `Gargalo da semana = ${t.gargalo}. Etapa com maior qtde × tempo_médio (onde a carteira estava mais travada).` : 'Sem gargalo registrado.'}">${escapeHtml(t.gargalo||'—')}</td>
       </tr>`;
   });
 
@@ -3564,17 +3574,23 @@ async function renderReuniao() {
           <tbody>
             ${rows.length === 0
               ? `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhum município ativo.</td></tr>`
-              : rows.map(m => `
-                <tr>
-                  <td style="font-weight:600;cursor:pointer;" onclick="openDrawer('${m.id}')">${escapeHtml(m.municipio)}</td>
-                  <td><span class="pill farol-${m.farol||''}">${m.farol||'—'}</span></td>
-                  <td class="num">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
-                  <td class="num" style="font-weight:600;">${fmtMoney(m.recAdj)}</td>
-                  <td><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
-                  <td class="num">${m.tempoEtapa}d</td>
-                  <td style="text-align:center;font-size:1rem;">${m.health}</td>
-                  <td class="num">${m.velocity.toFixed(2)}</td>
-                  <td style="font-size:.72rem;font-weight:600;color:${m.acao==='Agir Hoje'||m.acao==='Cobrar'?'var(--danger)':m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'};">${m.acao}</td>
+              : rows.map(m => {
+                const tRefF = tmFarol[m.farol] || 21;
+                const acaoExplain = m.acao === 'Agir Hoje' ? 'Health vermelho + receita ≥ R$1M — urgência máxima' :
+                                    m.acao === 'Cobrar' ? 'Health vermelho + receita < R$1M — cobrar movimento' :
+                                    m.acao === 'Acompanhar' ? 'Está nas etapas finais (R3/Licitação/Empenho/Entrega) — acompanhar avanço' :
+                                    m.acao === 'Nutrir' ? 'Etapas iniciais — nutrir relacionamento' : 'Sem ação definida (farol não classificado)';
+                return `
+                <tr title="${escapeHtml(m.municipio)} · Status ${m.status} · Farol ${m.farol||'—'} · ${m.tempoEtapa} dias na etapa · Receita Ajustada ${fmtMoney(m.recAdj)} · Health ${m.health} · Velocity ${m.velocity.toFixed(2)}">
+                  <td style="font-weight:600;cursor:pointer;" onclick="openDrawer('${m.id}')" title="Clique para abrir a ficha completa de ${escapeHtml(m.municipio)}.">${escapeHtml(m.municipio)}</td>
+                  <td title="Farol ${m.farol==='Q'?'Quente (Q)':m.farol==='M'?'Morno (M)':m.farol==='F'?'Frio (F)':m.farol==='NV'?'Não Vale (NV)':'não classificado'}. Define o tempo de referência usado no Health.">${m.farol ? `<span class="pill farol-${m.farol}">${m.farol}</span>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
+                  <td class="num" title="Alunos = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}.">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
+                  <td class="num" style="font-weight:600;" title="Receita Ajustada = (ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''}) × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.receita)} × ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}% = ${fmtMoney(m.recAdj)}.">${fmtMoney(m.recAdj)}</td>
+                  <td title="Status ${m.status==='Licitacao'?'Licitação':m.status}. Peso de conversão: ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%."><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
+                  <td class="num" title="${m.tempoEtapa} dias na etapa ${m.status} = hoje − data_${m.status.toLowerCase()}. Tempo médio do farol ${m.farol||'—'}: ${tRefF.toFixed(0)}d.">${m.tempoEtapa}d</td>
+                  <td style="text-align:center;font-size:1rem;" title="Health: ${m.health==='🟢'?'verde — dentro do tempo médio do farol':m.health==='🟡'?'amarelo — até 30-50% acima do tempo médio':m.health==='🔴'?'vermelho — atrasado, ultrapassou o limiar do farol':'sem farol, sem cálculo'}. Limiares: Quente 1.5x · Morno 1.3x · Frio 1.2x do tempo médio do próprio farol (${tRefF.toFixed(0)}d).">${m.health}</td>
+                  <td class="num" title="Velocity = dias na etapa (${m.tempoEtapa}) ÷ tempo médio do farol ${m.farol||'—'} (${tRefF.toFixed(0)}d) = ${m.velocity.toFixed(2)}. Valor < 1 = mais rápido que a média; > 1 = mais lento.">${m.velocity.toFixed(2)}</td>
+                  <td style="font-size:.72rem;font-weight:600;color:${m.acao==='Agir Hoje'||m.acao==='Cobrar'?'var(--danger)':m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'};" title="Ação recomendada '${m.acao}': ${acaoExplain}.">${m.acao}</td>
                   <td style="padding:2px 4px;">
                     <textarea rows="3" placeholder="Próxima ação..."
                       style="width:100%;min-width:160px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);resize:vertical;line-height:1.4;"
@@ -3606,7 +3622,7 @@ async function renderReuniao() {
                       onchange="salvarFechamentoSemana('${m.id}', this.value)">${escapeHtml(m.reg?.fechamento_semana||'')}</textarea>
                   </td>
                 </tr>
-              `).join('')}
+              `;}).join('')}
           </tbody>
         </table>
       </div>
