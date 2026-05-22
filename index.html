@@ -847,6 +847,56 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ========== TRAVA DE EDIÇÃO POR PAPEL ========== */
+/* Quando body.no-admin: bloqueia visualmente edições fora da Reunião Semanal */
+body.no-admin .admin-only {
+  display: none !important;
+}
+
+/* Drawer do município é SEMPRE readonly para não-admin (mesmo aberto a partir da Reunião) */
+body.no-admin #municipioDrawer input:not([type="button"]):not([type="submit"]),
+body.no-admin #municipioDrawer select,
+body.no-admin #municipioDrawer textarea {
+  pointer-events: none;
+  background: var(--bg) !important;
+  color: var(--ink-soft) !important;
+  cursor: not-allowed;
+}
+
+/* Configurações, Importar, Indicadores: inputs read-only quando não-admin */
+body.no-admin[data-page="configuracoes"] input,
+body.no-admin[data-page="configuracoes"] select,
+body.no-admin[data-page="configuracoes"] textarea,
+body.no-admin[data-page="importar"] input:not(#fonteFileInput),
+body.no-admin[data-page="indicadores"] input,
+body.no-admin[data-page="indicadores"] select {
+  pointer-events: none;
+  background: var(--bg) !important;
+  color: var(--ink-soft) !important;
+  cursor: not-allowed;
+}
+
+/* Cartões do kanban Pipeline: não arrastar pra não-admin */
+body.no-admin[data-page="pipeline"] .kanban-card {
+  cursor: pointer;
+  opacity: 0.95;
+}
+
+/* Aviso permanente no topo do drawer indicando view-only */
+body.no-admin #municipioDrawer .drawer-header::after {
+  content: "👁 Visualização (sem permissão para editar)";
+  position: absolute;
+  top: 8px;
+  right: 60px;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  background: var(--bg);
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  font-family: 'JetBrains Mono', monospace;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -1084,6 +1134,13 @@ function canViewPage(page) {
 function canEditCurrentPage() {
   if (isAdmin()) return true;
   return state.currentPage === 'reuniao';
+}
+
+// Bloqueia ação se não for admin. Retorna true se OK pra prosseguir.
+function enforceAdmin(msg) {
+  if (isAdmin()) return true;
+  alert(msg || '⛔ Apenas administradores podem fazer esta edição.\n\nSua conta tem permissão de visualização. A edição é liberada apenas para administradores e na tela Reunião Semanal.');
+  return false;
 }
 
 // Normaliza peso do banco (pode estar em decimal 0.25 ou % 25) para decimal
@@ -1452,6 +1509,9 @@ async function initApp() {
 
   applyRoleVisibility();
 
+  // Classe global no body para CSS de view-only
+  document.body.classList.toggle('no-admin', !isAdmin());
+
   await loadCoreData();
 
   document.querySelectorAll('.nav-item').forEach(b => {
@@ -1538,6 +1598,7 @@ function navigate(page) {
     _leafletMarkers = null;
   }
   state.currentPage = page;
+  document.body.setAttribute('data-page', page);
   document.querySelectorAll('.nav-item').forEach(b => {
     b.classList.toggle('active', b.dataset.page === page);
   });
@@ -2250,7 +2311,7 @@ function renderMunicipios() {
       </div>
       <div class="actions">
         <button class="btn ghost" onclick="exportarCSV()">Exportar CSV</button>
-        <button class="btn primary" onclick="novoMunicipio()">+ Novo município</button>
+        <button class="btn primary admin-only" onclick="novoMunicipio()">+ Novo município</button>
       </div>
     </div>
 
@@ -2659,7 +2720,7 @@ function renderDrawerComercial(m) {
       <div class="field full">
         <label style="display:flex;justify-content:space-between;align-items:center;">
           Responsável / Indicador
-          <button onclick="novoIndicadorRapido()" style="font:inherit;font-size:.72rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;">+ Novo</button>
+          <button class="admin-only" onclick="novoIndicadorRapido()" style="font:inherit;font-size:.72rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;">+ Novo</button>
         </label>
         <select data-field="indicacao">
           <option value="">— Sem responsável</option>
@@ -2730,7 +2791,7 @@ function renderDrawerComercial(m) {
     </div>
 
     <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);">
-      <button class="btn danger small" onclick="excluirMunicipio('${m.id}')">Excluir município</button>
+      <button class="btn danger small admin-only" onclick="excluirMunicipio('${m.id}')">Excluir município</button>
     </div>
   `;
 }
@@ -3034,7 +3095,7 @@ async function renderDrawerAtividades(m) {
       </div>
     </div>
     <div style="margin-top: 1rem;">
-      <button class="btn primary" onclick="adicionarAtividade('${m.id}')">Adicionar atividade</button>
+      <button class="btn primary admin-only" onclick="adicionarAtividade('${m.id}')">Adicionar atividade</button>
     </div>
 
     <div class="section-title">Histórico de atividades (${(atividades || []).length})</div>
@@ -3057,6 +3118,7 @@ async function renderDrawerAtividades(m) {
 }
 
 async function adicionarAtividade(municipio_id) {
+  if (!enforceAdmin()) return;
   const tipo = document.getElementById('ativTipo').value;
   const titulo = document.getElementById('ativTitulo').value.trim();
   if (!titulo) { alert('Título é obrigatório'); return; }
@@ -3111,6 +3173,10 @@ async function renderDrawerHistorico(m) {
 // ============================================================
 const salvarCampo = debounce(async (field, value) => {
   if (!state.currentMunicipio) return;
+  if (!isAdmin()) {
+    showSaveIndicator('error', 'Sem permissão');
+    return;
+  }
   showSaveIndicator('saving', 'Salvando...');
 
   // Converte valor
@@ -3158,6 +3224,7 @@ function attachAutoSave() {
 // NOVO MUNICÍPIO
 // ============================================================
 async function novoMunicipio() {
+  if (!enforceAdmin()) return;
   const nome = prompt('Nome do município:');
   if (!nome || !nome.trim()) return;
   const uf = prompt('UF (2 letras):', 'SP');
@@ -3177,6 +3244,7 @@ async function novoMunicipio() {
 }
 
 async function excluirMunicipio(id) {
+  if (!enforceAdmin()) return;
   if (!confirm('Excluir este município permanentemente? Esta ação não pode ser desfeita.')) return;
   const { error } = await sb.from('municipios').delete().eq('id', id);
   if (error) { alert('Erro: ' + error.message); return; }
@@ -4035,7 +4103,7 @@ function renderPipeline() {
                 ${mun.map(m => {
                   const r = calcReceita(m, cfg);
                   return `
-                    <div class="kanban-card" draggable="true" data-id="${m.id}">
+                    <div class="kanban-card" draggable="${isAdmin()}" data-id="${m.id}">
                       <div class="city">${escapeHtml(m.municipio)}</div>
                       ${m.farol ? `<span class="pill farol-${m.farol}">${escapeHtml(m.farol)}</span>` : ''}
                       <div class="meta">${escapeHtml(m.uf || '')} · ${fmtNum(m.total_ef)} alunos</div>
@@ -4074,6 +4142,7 @@ function renderPipeline() {
 }
 
 async function mudarStatus(id, novoStatus) {
+  if (!enforceAdmin('Apenas admin pode mover municípios no Pipeline.')) return;
   const updates = { status: novoStatus, atualizado_por: state.user.id };
   const dataField = `data_${novoStatus.toLowerCase()}`;
   const validDates = ['data_sql','data_r1','data_r2','data_r3','data_licitacao','data_win','data_empenho','data_entrega'];
@@ -4101,7 +4170,7 @@ async function renderImportar() {
         <h1><em>Fontes</em> de Dados</h1>
       </div>
       <div class="actions">
-        <button class="btn ghost" onclick="uploadGenerico()">Upload de CSV geral</button>
+        <button class="btn ghost admin-only" onclick="uploadGenerico()">Upload de CSV geral</button>
       </div>
     </div>
     <div class="page-body">
@@ -4167,7 +4236,7 @@ function renderFontesTable() {
             <td class="num">${f.cobertura_municipios || 0}</td>
             <td>${statusPill(f.status)}</td>
             <td style="white-space:nowrap">
-              <button class="btn ghost" style="padding:4px 10px; font-size:.8rem" onclick="solicitarUpload('${f.codigo}')">↑ Enviar</button>
+              <button class="btn ghost admin-only" style="padding:4px 10px; font-size:.8rem" onclick="solicitarUpload('${f.codigo}')">↑ Enviar</button>
               ${f.url_oficial ? `<a class="btn ghost" style="padding:4px 10px; font-size:.8rem; margin-left:4px" href="${escapeHtml(f.url_oficial)}" target="_blank">↗</a>` : ''}
             </td>
           </tr>
@@ -4179,6 +4248,7 @@ function renderFontesTable() {
 }
 
 function solicitarUpload(codigoFonte) {
+  if (!enforceAdmin()) return;
   state.fonteUpload = codigoFonte;
   const input = document.getElementById('fonteFileInput');
   input.value = '';
@@ -4189,6 +4259,7 @@ function solicitarUpload(codigoFonte) {
 }
 
 function uploadGenerico() {
+  if (!enforceAdmin()) return;
   state.fonteUpload = null;
   const input = document.getElementById('fonteFileInput');
   input.value = '';
@@ -5006,7 +5077,7 @@ async function renderIndicadores() {
         <h1><em>Indicadores</em> & Remuneração</h1>
       </div>
       <div class="actions">
-        <button class="btn primary" onclick="novoIndicador()">+ Novo indicador</button>
+        <button class="btn primary admin-only" onclick="novoIndicador()">+ Novo indicador</button>
       </div>
     </div>
     <div class="page-body">
@@ -5104,6 +5175,7 @@ async function renderIndicadores() {
 
 
 async function editarIndicador(id) {
+  if (!enforceAdmin()) return;
   const { data: ind } = await sb.from('indicadores_externos').select('*').eq('id', id).single();
   if (!ind) return;
   const pct = prompt(`Percentual de comissão de ${ind.nome} (ex: 6 para 6%):`, ((ind.percentual_comissao||0)*100).toFixed(1));
@@ -5114,6 +5186,7 @@ async function editarIndicador(id) {
 }
 
 async function novoIndicador() {
+  if (!enforceAdmin()) return;
   const codigo = prompt('Código (ex: LCM, MNS, FE):');
   if (!codigo) return;
   const nome = prompt('Nome completo:');
@@ -5130,6 +5203,7 @@ async function novoIndicador() {
 }
 
 async function novoIndicadorRapido() {
+  if (!enforceAdmin()) return;
   const codigo = prompt('Código do responsável (ex: LCM, MNS, FE):');
   if (!codigo) return;
   const nome = prompt('Nome completo:');
@@ -5364,7 +5438,7 @@ function renderConfiguracoes() {
       </div>
 
       <div style="margin-top:2rem;">
-        <button class="btn primary" onclick="salvarConfiguracoes()">Salvar configurações</button>
+        <button class="btn primary admin-only" onclick="salvarConfiguracoes()">Salvar configurações</button>
       </div>
     </div>
   `;
@@ -5438,6 +5512,7 @@ function iniciarCalculadoraRemuneracao() {
 }
 
 async function salvarConfiguracoes() {
+  if (!enforceAdmin()) return;
   const simples = document.querySelectorAll('[data-cfg]');
   const nested = document.querySelectorAll('[data-cfg-nested]');
 
