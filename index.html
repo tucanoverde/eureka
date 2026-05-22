@@ -1490,7 +1490,7 @@ function renderDashboard() {
     d.alunos += (m.ef1_alunos||0)+(m.ef2_alunos||0);
     if (m.indicador_performance_ef != null) d.scores.push(parseFloat(m.indicador_performance_ef));
     if (m.status==='Ganho') d.ganhos++;
-    if (ETAPAS.includes(m.status)) d.pipeline++;
+    if (ETAPAS_ATIVAS.includes(m.status)) d.pipeline++;
     if (m.farol) d.farois[m.farol] = (d.farois[m.farol]||0)+1;
   }
   Object.values(ufData).forEach(d => {
