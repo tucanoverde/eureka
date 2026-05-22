@@ -1517,10 +1517,11 @@ function renderDashboard() {
     .sort((a,b)=>b[1].receita*b[1].pct - a[1].receita*a[1].pct)
     .slice(0,5);
 
-  // Top 10 por Score educacional (filtrado por ETAPAS_ATIVAS, ordenado por indicador_performance_ef)
-  const top10Score = todos
-    .filter(m => ETAPAS_ATIVAS.includes(m.status) && m.indicador_performance_ef != null)
-    .sort((a,b) => (b.indicador_performance_ef || 0) - (a.indicador_performance_ef || 0))
+  // Top 10 ENRIQUECIDO — mesmo critério (receita potencial dentro de ETAPAS_ATIVAS),
+  // mas exibe o Score educacional logo abaixo do nome do município para contexto.
+  const top10Enriched = todos
+    .filter(m => ETAPAS_ATIVAS.includes(m.status))
+    .sort((a,b) => b.rec - a.rec)
     .slice(0, 10);
 
   document.getElementById('pageContent').innerHTML = `
@@ -1687,22 +1688,25 @@ function renderDashboard() {
             `).join('')}
           </div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios em pipeline (Prioritária, SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win) ordenados por Score educacional (indicador_performance_ef) decrescente. Permite focar em municípios com melhor base escolar.">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-score-titulo">🎓 Top 10 · Melhor Score Educacional</h2>
-          <div id="top10-score-lista">
-            ${top10Score.length === 0
-              ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município em pipeline tem score educacional preenchido ainda.</div>`
-              : top10Score.map((m,i)=>`
-                <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')" title="${escapeHtml(m.municipio)} (${m.uf}) · status ${m.status} · Score ${fmtNum(m.indicador_performance_ef,2)} · Receita potencial ${fmtMoney(m.rec)}">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios em pipeline (Prioritária, SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win) ordenados por Receita Potencial decrescente. Mesma lista do card ao lado, mas com o Score Educacional exibido abaixo do nome para contexto.">
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-enriched-titulo">💰 Top 10 · Receita Potencial (com Score)</h2>
+          <div id="top10-enriched-lista">
+            ${top10Enriched.length === 0
+              ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município em pipeline.</div>`
+              : top10Enriched.map((m,i)=>{
+                const sc = m.indicador_performance_ef;
+                const scCor = sc == null ? 'var(--ink-faint)' : sc >= 7 ? 'var(--accent)' : sc >= 5 ? 'var(--warn)' : 'var(--danger)';
+                return `
+                <div style="display:flex;align-items:center;gap:.75rem;padding:.45rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')" title="${escapeHtml(m.municipio)} (${m.uf}) · status ${m.status} · Receita = ef1×${cfg.ef1} + ef2×${cfg.ef2}${cfg.ei>0?' + ei×'+cfg.ei:''} = ${fmtMoney(m.rec)} · Score educacional: ${sc != null ? fmtNum(sc,2) : 'não preenchido'}">
                   <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
                   <div style="flex:1;min-width:0;">
-                    <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
-                    <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''} · ${fmtMoney(m.rec)}</div>
+                    <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)} <span style="font-weight:400;color:var(--ink-dim);">· ${m.uf||''}</span></div>
+                    <div style="font-size:.72rem;color:var(--ink-dim);">Score: <span style="font-weight:600;color:${scCor};">${sc != null ? fmtNum(sc,2) : '—'}</span></div>
                   </div>
-                  <div style="font-size:.95rem;font-weight:700;color:var(--accent);white-space:nowrap;font-family:Fraunces,serif;">${fmtNum(m.indicador_performance_ef,2)}</div>
+                  <div style="font-size:.85rem;font-weight:700;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
                   ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
-                </div>
-              `).join('')}
+                </div>`;
+              }).join('')}
           </div>
         </div>
       </div>
