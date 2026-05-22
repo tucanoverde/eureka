@@ -1042,6 +1042,7 @@ function getCfg() {
   return {
     ef1:        c.repasse_aluno_ef1 || 400,
     ef2:        c.repasse_aluno_ef2 || 500,
+    ei:         c.repasse_aluno_ei  || 0,
     impostos:   c.impostos          || 0.0318,
     redesa:     c.pct_redesa        || 0.50,
     conv_agr:   (c.cenarios_conversao||{}).agressivo   || 1.00,
@@ -1065,9 +1066,12 @@ function getCfg() {
 }
 
 // Receita bruta de um município (alunos × ticket)
+// Inclui EI somente se o ticket EI estiver configurado (> 0)
 function calcReceita(m, cfg) {
   cfg = cfg || getCfg();
-  return (m.ef1_alunos||0) * cfg.ef1 + (m.ef2_alunos||0) * cfg.ef2;
+  return (m.ef1_alunos||0) * cfg.ef1
+       + (m.ef2_alunos||0) * cfg.ef2
+       + (m.ei_alunos||0)  * (cfg.ei||0);
 }
 
 // Peso de etapa para um município
@@ -1513,10 +1517,10 @@ function renderDashboard() {
     .sort((a,b)=>b[1].receita*b[1].pct - a[1].receita*a[1].pct)
     .slice(0,5);
 
-  // Top 10 Prioritárias (substituiu a 2ª lista de Top 10 duplicada)
-  const prioritarias = todos
-    .filter(m => m.status === 'Prioritaria')
-    .sort((a,b) => b.rec - a.rec)
+  // Top 10 por Score educacional (filtrado por ETAPAS_ATIVAS, ordenado por indicador_performance_ef)
+  const top10Score = todos
+    .filter(m => ETAPAS_ATIVAS.includes(m.status) && m.indicador_performance_ef != null)
+    .sort((a,b) => (b.indicador_performance_ef || 0) - (a.indicador_performance_ef || 0))
     .slice(0, 10);
 
   document.getElementById('pageContent').innerHTML = `
@@ -1683,19 +1687,19 @@ function renderDashboard() {
             `).join('')}
           </div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios marcados com status 'Prioritária' (pre-engajamento), ordenados por receita bruta = ef1×${cfg.ef1} + ef2×${cfg.ef2}.">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-prio-titulo">⭐ Top 10 · Prioritárias</h2>
-          <div id="top10-prio-lista">
-            ${prioritarias.length === 0
-              ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município marcado como Prioritária. Marque municípios com status <strong>Prioritária</strong> para vê-los aqui.</div>`
-              : prioritarias.map((m,i)=>`
-                <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios em pipeline (Prioritária, SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win) ordenados por Score educacional (indicador_performance_ef) decrescente. Permite focar em municípios com melhor base escolar.">
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-score-titulo">🎓 Top 10 · Melhor Score Educacional</h2>
+          <div id="top10-score-lista">
+            ${top10Score.length === 0
+              ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município em pipeline tem score educacional preenchido ainda.</div>`
+              : top10Score.map((m,i)=>`
+                <div style="display:flex;align-items:center;gap:.75rem;padding:.35rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')" title="${escapeHtml(m.municipio)} (${m.uf}) · status ${m.status} · Score ${fmtNum(m.indicador_performance_ef,2)} · Receita potencial ${fmtMoney(m.rec)}">
                   <span style="font-size:.75rem;color:var(--ink-faint);width:18px;text-align:right;">${i+1}</span>
                   <div style="flex:1;min-width:0;">
                     <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.municipio)}</div>
-                    <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''}</div>
+                    <div style="font-size:.72rem;color:var(--ink-dim)">${m.uf||''} · ${fmtMoney(m.rec)}</div>
                   </div>
-                  <div style="font-size:.82rem;font-weight:600;color:var(--accent);white-space:nowrap;">${fmtMoney(m.rec)}</div>
+                  <div style="font-size:.95rem;font-weight:700;color:var(--accent);white-space:nowrap;font-family:Fraunces,serif;">${fmtNum(m.indicador_performance_ef,2)}</div>
                   ${m.farol?`<span class="pill farol-${m.farol}" style="font-size:.65rem;">${m.farol}</span>`:''}
                 </div>
               `).join('')}
@@ -2537,8 +2541,13 @@ async function buscarContatosIA(munId) {
 }
 
 function renderDrawerPublico(m) {
-  const EF1 = 400, EF2 = 500;
-  const receita = (m.ef1_alunos||0)*EF1 + (m.ef2_alunos||0)*EF2;
+  const cfgPub = getCfg();
+  const EF1 = cfgPub.ef1, EF2 = cfgPub.ef2, EI = cfgPub.ei;
+  const receita = calcReceita(m, cfgPub);
+  const receitaEI = (m.ei_alunos||0) * EI;
+  const auditEI = m.ei_alunos_editado_em
+    ? `Editado por <strong>${escapeHtml(m.ei_alunos_editado_por||'—')}</strong> em ${new Date(m.ei_alunos_editado_em).toLocaleString('pt-BR')}`
+    : 'Edite o valor — quem editar e quando ficará registrado';
 
   // Helpers visuais
   const bar = (val, max, color='var(--accent)') => {
@@ -2620,7 +2629,34 @@ function renderDrawerPublico(m) {
     <div class="section-title" style="margin-top:0;">Educação</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
       ${card('📚', 'Alunos EF Total', m.total_ef ? fmtNum(m.total_ef) : '—', `EF1: ${fmtNum(m.ef1_alunos||0)} · EF2: ${fmtNum(m.ef2_alunos||0)}`)}
-      ${card('💰', 'Receita Potencial', fmtMoney(receita), `EF1 × R$${EF1} + EF2 × R$${EF2}`, 'var(--accent)')}
+      ${card('💰', 'Receita Potencial', fmtMoney(receita), `EF1 × R$${EF1} + EF2 × R$${EF2}${EI>0?` + EI × R$${EI}`:''}`, 'var(--accent)')}
+    </div>
+
+    <details ${m.ei_alunos_editado_em || m.ei_alunos ? 'open' : ''} style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.85rem 1rem;margin-bottom:1.25rem;">
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:.75rem;font-size:.95rem;font-weight:600;color:var(--ink);">
+        <span style="font-size:1.4rem;">🧒</span>
+        <span style="flex:1;">Ensino Infantil (EI)</span>
+        <span style="font-size:.72rem;color:var(--ink-dim);font-weight:400;">${EI > 0 ? `Ticket: R$ ${EI}/aluno` : '⚠️ Ticket EI não configurado'}</span>
+      </summary>
+      <div style="margin-top:.85rem;display:grid;grid-template-columns:1fr 1fr;gap:.6rem;align-items:start;">
+        <div>
+          <label style="display:block;font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem;">Alunos EI</label>
+          <input data-field="ei_alunos" type="number" min="0" value="${m.ei_alunos||''}" placeholder="Digite a quantidade..."
+            style="width:100%;padding:.55rem .75rem;border:1px solid var(--line-strong);border-radius:3px;background:var(--bg-elev);font:inherit;font-size:1rem;font-weight:600;color:${m.ei_alunos != null ? 'var(--ink)' : 'var(--ink-faint)'};">
+        </div>
+        <div>
+          <label style="display:block;font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem;" title="Receita EI = alunos EI × ticket EI (configurado em Configurações).">Receita EI</label>
+          <div style="padding:.55rem .75rem;background:var(--bg-elev);border:1px solid var(--line);border-radius:3px;font-weight:600;color:var(--accent);" title="${(m.ei_alunos||0)} alunos × R$ ${EI} = ${fmtMoney(receitaEI)}">
+            ${EI > 0 ? fmtMoney(receitaEI) : '— (configure o ticket EI)'}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:.6rem;font-size:.72rem;color:var(--ink-dim);font-style:italic;">
+        ${auditEI}
+      </div>
+    </details>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
       ${card('📊', 'IDEB EF1 2023', m.ideb_ef1 ? fmtNum(m.ideb_ef1,1) : '—', m.ideb_ef2 ? `EF2: ${fmtNum(m.ideb_ef2,1)}` : '—')}
       ${card('📈', 'SAEB EF1 2023', m.saeb_ef1 ? fmtNum(m.saeb_ef1,1) : '—', m.saeb_ef2 ? `EF2: ${fmtNum(m.saeb_ef2,1)}` : '—')}
       ${card('✅', 'Aprovação EF', m.aprovacao_ef ? fmtNum(m.aprovacao_ef,1)+'%' : '—', m.abandono_ef ? `Abandono: ${fmtNum(m.abandono_ef,1)}%` : '', m.aprovacao_ef >= 95 ? 'var(--accent)' : 'var(--warn)')}
@@ -2651,6 +2687,7 @@ function renderDrawerPublico(m) {
           <div class="field"><label>Região de Governo</label><input data-field="regiao_governo" type="text" value="${escapeHtml(m.regiao_governo||'')}"></div>
           <div class="field"><label>Alunos EF1</label><input data-field="ef1_alunos" type="number" value="${m.ef1_alunos||''}"></div>
           <div class="field"><label>Alunos EF2</label><input data-field="ef2_alunos" type="number" value="${m.ef2_alunos||''}"></div>
+          <div class="field"><label>Alunos EI (Ensino Infantil)</label><input data-field="ei_alunos" type="number" value="${m.ei_alunos||''}"></div>
           <div class="field"><label>IDHM</label><input data-field="idhm" type="number" step="0.001" value="${m.idhm||''}"></div>
           <div class="field"><label>IDEB EF1</label><input data-field="ideb_ef1" type="number" step="0.01" value="${m.ideb_ef1||''}"></div>
           <div class="field"><label>IDEB EF2</label><input data-field="ideb_ef2" type="number" step="0.01" value="${m.ideb_ef2||''}"></div>
@@ -2796,10 +2833,16 @@ const salvarCampo = debounce(async (field, value) => {
   // Converte valor
   let v = value;
   if (v === '') v = null;
-  else if (['ef1_alunos','ef2_alunos','populacao_2022'].includes(field)) v = parseInt(v);
+  else if (['ef1_alunos','ef2_alunos','ei_alunos','populacao_2022'].includes(field)) v = parseInt(v);
   else if (['educacao_total_liquidado','fundeb_distribuido','idhm','ideb_ef1','ideb_ef2','saeb_ef1','saeb_ef2','aprovacao_ef','abandono_ef'].includes(field)) v = parseFloat(v);
 
   const updates = { [field]: v, atualizado_por: state.user.id };
+
+  // Audit per-campo: ei_alunos guarda quem editou e quando
+  if (field === 'ei_alunos') {
+    updates.ei_alunos_editado_por = state.perfil?.nome || state.user.email || 'usuário';
+    updates.ei_alunos_editado_em  = new Date().toISOString();
+  }
   const { data, error } = await sb
     .from('municipios')
     .update(updates)
@@ -4799,9 +4842,22 @@ function renderConfiguracoes() {
 
       <div class="section-title">Repasse por aluno</div>
       <div class="form-grid">
-        <div class="field"><label>EF1 (R$)</label><input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1||400}"></div>
-        <div class="field"><label>EF2 (R$)</label><input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2||500}"></div>
-        <div class="field"><label>% Redesa (0-1)</label><input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa||0.5}"></div>
+        <div class="field" title="Ticket por aluno do Ensino Fundamental I (anos iniciais). Usado em todos os cálculos de receita.">
+          <label>EF1 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef1" value="${state.configuracoes.repasse_aluno_ef1||400}">
+        </div>
+        <div class="field" title="Ticket por aluno do Ensino Fundamental II (anos finais).">
+          <label>EF2 (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ef2" value="${state.configuracoes.repasse_aluno_ef2||500}">
+        </div>
+        <div class="field" title="Ticket por aluno do Ensino Infantil (EI). Se zerado, EI não entra no cálculo de receita. Deixe 0 enquanto não tiver definido.">
+          <label>EI · Ensino Infantil (R$)</label>
+          <input type="number" data-cfg="repasse_aluno_ei" value="${state.configuracoes.repasse_aluno_ei||0}">
+        </div>
+        <div class="field" title="Percentual de faturamento Redesa sobre a receita líquida. Default 50%.">
+          <label>% Redesa (0-1)</label>
+          <input type="number" step="0.01" min="0" max="1" data-cfg="pct_redesa" value="${state.configuracoes.pct_redesa||0.5}">
+        </div>
       </div>
 
       <div class="section-title">Cenários de conversão</div>
