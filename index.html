@@ -910,6 +910,31 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
   </div>
 </div>
 
+<!-- ============= AGUARDANDO APROVAÇÃO ============= -->
+<div id="pendingScreen" class="auth-screen hidden">
+  <div class="auth-card" style="text-align:center;max-width:480px;">
+    <div class="auth-brand" style="justify-content:center;">
+      <span class="logo-mark">Eureka</span>
+      <span class="logo-sub">Tucano Verde · CRM</span>
+    </div>
+    <div style="font-size:3rem;margin:2rem 0 1rem;">⏳</div>
+    <h1 style="font-family:'Fraunces',serif;font-weight:500;font-size:1.75rem;letter-spacing:-0.025em;line-height:1.15;margin-bottom:.75rem;">
+      Conta criada,<br><em style="font-style:italic;color:var(--accent);">aguardando aprovação.</em>
+    </h1>
+    <p style="color:var(--ink-dim);font-size:.95rem;margin-bottom:.5rem;">
+      Olá, <strong id="pendingNome">—</strong>.
+    </p>
+    <p style="color:var(--ink-dim);font-size:.9rem;margin-bottom:2rem;line-height:1.55;">
+      Seu cadastro está aguardando aprovação manual de um administrador.<br>
+      Você receberá acesso assim que o cadastro for liberado.
+    </p>
+    <div class="message warn" style="font-size:.82rem;text-align:left;margin-bottom:1.5rem;">
+      <strong>Em caso de urgência</strong>, fale com o administrador do CRM (Luis · mauricio@redesa.co).
+    </div>
+    <button class="btn ghost wide" onclick="logout()">Sair</button>
+  </div>
+</div>
+
 <!-- ============= APP ============= -->
 <div id="app" class="app hidden">
   <aside class="sidebar">
@@ -952,6 +977,12 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
     <button class="nav-item" data-page="indicadores">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0 0z"/></svg>
       Indicadores
+    </button>
+
+    <div class="nav-section-label">Admin</div>
+    <button class="nav-item" data-page="aprovacoes">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+      Aprovações
     </button>
     <button class="nav-item" data-page="configuracoes">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1004,6 +1035,56 @@ tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-famil
 const SUPABASE_URL = 'https://xwuydwdavzsazinsmibw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_54ptZzAI_pwtyBt89MFE7w_yK503nnp';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================================
+// ROLES & PERMISSÕES
+// ============================================================
+// Admins fixos: têm acesso total e aprovam novos cadastros
+const ADMIN_EMAILS = ['cesaogolgpt@gmail.com', 'mauricio@redesa.co'];
+
+// Páginas que cada papel pode acessar (entradas da sidebar)
+const PAGES_BY_ROLE = {
+  admin:    ['dashboard','municipios','reuniao','tracking','health','pipeline','importar','indicadores','aprovacoes','configuracoes'],
+  redesa:   ['dashboard','municipios','reuniao','tracking','health','pipeline','indicadores'],
+  external: ['reuniao'],
+};
+
+// Detecta papel a partir do email (usado no signup)
+function detectPapelByEmail(email) {
+  const e = (email||'').toLowerCase().trim();
+  if (ADMIN_EMAILS.includes(e)) return 'admin';
+  if (e.endsWith('@redesa.co')) return 'redesa';
+  return 'external';
+}
+
+// Papel do usuário logado
+function userPapel() {
+  return state.perfil?.papel || 'external';
+}
+function isAdmin()    { return userPapel() === 'admin'; }
+function isRedesa()   { return userPapel() === 'redesa'; }
+function isExternal() { return userPapel() === 'external'; }
+
+// O usuário foi aprovado?
+function userAprovado() {
+  // Admins são sempre aprovados (segurança)
+  if (ADMIN_EMAILS.includes((state.user?.email||'').toLowerCase())) return true;
+  return state.perfil?.aprovado === true;
+}
+
+// Pode acessar essa página?
+function canViewPage(page) {
+  return (PAGES_BY_ROLE[userPapel()] || PAGES_BY_ROLE.external).includes(page);
+}
+
+// Pode EDITAR algo na tela atual?
+// - admin: pode editar tudo em qualquer tela
+// - redesa: só pode editar na Reunião Semanal
+// - external: só pode editar na Reunião Semanal
+function canEditCurrentPage() {
+  if (isAdmin()) return true;
+  return state.currentPage === 'reuniao';
+}
 
 // Normaliza peso do banco (pode estar em decimal 0.25 ou % 25) para decimal
 function normPeso(v, def) {
@@ -1287,16 +1368,37 @@ document.getElementById('signupForm').addEventListener('submit', async e => {
   e.preventDefault();
   const msgBox = document.getElementById('authMessage');
   msgBox.innerHTML = '<div class="message">Criando conta...</div>';
+  const emailVal = document.getElementById('signupEmail').value.trim().toLowerCase();
+  const nomeVal  = document.getElementById('signupNome').value.trim();
   const { data, error } = await sb.auth.signUp({
-    email: document.getElementById('signupEmail').value,
+    email: emailVal,
     password: document.getElementById('signupPassword').value,
-    options: { data: { nome: document.getElementById('signupNome').value } },
+    options: { data: { nome: nomeVal } },
   });
   if (error) return showMessage(msgBox, 'error', error.message);
-  if (data.session) {
+
+  // Detecta papel automaticamente + cria perfil em estado pendente (exceto admins)
+  const papelAuto = detectPapelByEmail(emailVal);
+  const aprovadoAuto = papelAuto === 'admin'; // admins entram aprovados
+
+  if (data.user) {
+    // Tenta criar/atualizar perfil. Se houver trigger no DB, o upsert garante o estado.
+    await sb.from('perfis').upsert({
+      id: data.user.id,
+      nome: nomeVal || emailVal,
+      papel: papelAuto,
+      aprovado: aprovadoAuto,
+    }, { onConflict: 'id' });
+  }
+
+  if (data.session && aprovadoAuto) {
+    await initApp();
+  } else if (data.session && !aprovadoAuto) {
+    // Logado mas não aprovado — initApp vai mostrar tela de aguardando
     await initApp();
   } else {
-    showMessage(msgBox, 'success', 'Conta criada! Verifique seu email se necessário e faça login.');
+    showMessage(msgBox, 'success',
+      `Conta criada! Aguardando aprovação do administrador. Você receberá acesso assim que o cadastro for liberado.`);
   }
 });
 
@@ -1313,32 +1415,67 @@ async function initApp() {
   if (!session) {
     document.getElementById('authScreen').classList.remove('hidden');
     document.getElementById('app').classList.add('hidden');
+    document.getElementById('pendingScreen')?.classList.add('hidden');
     return;
   }
   state.user = session.user;
 
-  // Pega perfil
-  const { data: perfil } = await sb.from('perfis').select('*').eq('id', state.user.id).single();
-  state.perfil = perfil;
+  let { data: perfil } = await sb.from('perfis').select('*').eq('id', state.user.id).single();
 
+  // Admins hardcoded sempre entram como admin aprovado (auto-correção)
+  if (ADMIN_EMAILS.includes((state.user.email||'').toLowerCase())) {
+    if (!perfil || perfil.papel !== 'admin' || perfil.aprovado !== true) {
+      const fix = { id: state.user.id, nome: perfil?.nome || state.user.email, papel: 'admin', aprovado: true };
+      const { data: upserted } = await sb.from('perfis').upsert(fix, { onConflict: 'id' }).select().single();
+      perfil = upserted || fix;
+    }
+  }
+
+  state.perfil = perfil;
   document.getElementById('authScreen').classList.add('hidden');
+
+  if (!userAprovado()) {
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('pendingScreen').classList.remove('hidden');
+    const pendingNome = document.getElementById('pendingNome');
+    if (pendingNome) pendingNome.textContent = perfil?.nome || state.user.email;
+    return;
+  }
+
+  document.getElementById('pendingScreen')?.classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
 
-  // UI do usuário
   const nomeCompleto = perfil?.nome || state.user.email;
   document.getElementById('userName').textContent = nomeCompleto;
-  document.getElementById('userRole').textContent = perfil?.papel || 'sem papel';
+  document.getElementById('userRole').textContent = userPapel();
   document.getElementById('userAvatar').textContent = (nomeCompleto[0] || '?').toUpperCase();
 
-  // Carrega dados básicos
+  applyRoleVisibility();
+
   await loadCoreData();
 
-  // Nav
   document.querySelectorAll('.nav-item').forEach(b => {
     b.addEventListener('click', () => navigate(b.dataset.page));
   });
 
-  navigate('dashboard');
+  const initialPage = canViewPage('dashboard') ? 'dashboard' : 'reuniao';
+  navigate(initialPage);
+}
+
+// Esconde itens da sidebar que o papel atual não pode ver
+function applyRoleVisibility() {
+  document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
+    btn.style.display = canViewPage(btn.dataset.page) ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-section-label').forEach(l => {
+    let next = l.nextElementSibling;
+    let temVisivel = false;
+    while (next && !next.classList.contains('nav-section-label') && !next.classList.contains('sidebar-footer')) {
+      if (next.classList.contains('nav-item') && next.style.display !== 'none') { temVisivel = true; break; }
+      next = next.nextElementSibling;
+    }
+    l.style.display = temVisivel ? '' : 'none';
+  });
 }
 
 async function loadCoreData() {
@@ -1391,6 +1528,9 @@ async function loadCoreData() {
 }
 
 function navigate(page) {
+  // Enforça permissão: se o papel não pode ver, redireciona pra Reunião Semanal
+  if (!canViewPage(page)) page = 'reuniao';
+
   // Se sair do dashboard, destruir mapa para recriar corretamente
   if (state.currentPage === 'dashboard' && page !== 'dashboard' && _leafletMap) {
     _leafletMap.remove();
@@ -1410,9 +1550,136 @@ function navigate(page) {
     health: renderHealth,
     importar: renderImportar,
     indicadores: renderIndicadores,
+    aprovacoes: renderAprovacoes,
     configuracoes: renderConfiguracoes,
   };
   (renderers[page] || renderDashboard)();
+}
+
+// ============================================================
+// APROVAÇÕES — admin aprova/rejeita novos cadastros
+// ============================================================
+async function renderAprovacoes() {
+  if (!isAdmin()) {
+    document.getElementById('pageContent').innerHTML = `<div class="page-body"><div class="message error">Acesso restrito. Apenas administradores podem ver esta tela.</div></div>`;
+    return;
+  }
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-header">
+      <div class="heading">
+        <div class="crumb">Admin · Cadastros</div>
+        <h1><em>Aprovações</em> de acesso</h1>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="aprov-content"><div class="loading"></div> Carregando perfis...</div>
+    </div>
+  `;
+  await loadAprovacoes();
+}
+
+async function loadAprovacoes() {
+  // Lê todos os perfis com email dos auth.users (precisa de RLS permitindo admin)
+  const { data: perfis, error } = await sb.from('perfis').select('*').order('aprovado', { ascending: true });
+  const content = document.getElementById('aprov-content');
+  if (!content) return;
+  if (error) { content.innerHTML = `<div class="message error">Erro ao buscar perfis: ${escapeHtml(error.message)}</div>`; return; }
+
+  const pendentes = (perfis||[]).filter(p => !p.aprovado);
+  const aprovados = (perfis||[]).filter(p =>  p.aprovado);
+
+  const rowCard = (p, isPendente) => {
+    const isEsteAdmin = ADMIN_EMAILS.includes((p.email||'').toLowerCase()) || p.papel === 'admin' && p.id === state.user.id;
+    return `
+    <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1rem;margin-bottom:.6rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <div style="font-weight:600;font-size:.95rem;">${escapeHtml(p.nome||'(sem nome)')}</div>
+        <div style="font-size:.78rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;">${escapeHtml(p.email||p.id)}</div>
+        <div style="font-size:.72rem;color:var(--ink-faint);margin-top:.25rem;">
+          Criado em: ${p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-BR') : '—'}
+          ${p.aprovado_em ? ` · Aprovado em ${new Date(p.aprovado_em).toLocaleDateString('pt-BR')}` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;">
+        <label style="font-size:.72rem;color:var(--ink-dim);">Papel</label>
+        <select onchange="atualizarPapel('${p.id}', this.value)" ${isEsteAdmin?'disabled title="Admin fixo, não pode mudar"':''}
+          style="font:inherit;font-size:.82rem;padding:4px 8px;border:1px solid var(--line-strong);border-radius:3px;background:var(--bg);">
+          <option value="admin"    ${p.papel==='admin'?'selected':''}>admin</option>
+          <option value="redesa"   ${p.papel==='redesa'?'selected':''}>redesa</option>
+          <option value="external" ${p.papel==='external'?'selected':''}>external</option>
+        </select>
+        ${isPendente
+          ? `<button class="btn primary small" onclick="aprovarPerfil('${p.id}')">✅ Aprovar</button>
+             <button class="btn ghost small"   onclick="rejeitarPerfil('${p.id}')">❌ Rejeitar</button>`
+          : `<button class="btn ghost small"   onclick="revogarAprovacao('${p.id}')" ${isEsteAdmin?'disabled':''}>🔒 Revogar</button>`
+        }
+      </div>
+    </div>`;
+  };
+
+  content.innerHTML = `
+    <div style="margin-bottom:1.5rem;">
+      <h2 style="font-family:Fraunces,serif;font-weight:500;font-size:1.25rem;margin-bottom:.25rem;">Pendentes (${pendentes.length})</h2>
+      <p style="font-size:.8rem;color:var(--ink-dim);margin-bottom:1rem;">Cadastros aguardando sua aprovação. Defina o papel antes de aprovar.</p>
+      ${pendentes.length === 0
+        ? `<div style="background:var(--accent-soft);border:1px solid var(--accent);padding:1rem;border-radius:4px;font-size:.85rem;color:var(--accent);">✅ Nenhum cadastro pendente.</div>`
+        : pendentes.map(p => rowCard(p, true)).join('')}
+    </div>
+
+    <div>
+      <h2 style="font-family:Fraunces,serif;font-weight:500;font-size:1.25rem;margin-bottom:.25rem;">Aprovados (${aprovados.length})</h2>
+      <p style="font-size:.8rem;color:var(--ink-dim);margin-bottom:1rem;">Usuários ativos. Você pode mudar o papel ou revogar acesso.</p>
+      ${aprovados.map(p => rowCard(p, false)).join('')}
+    </div>
+
+    <div style="margin-top:2rem;padding:1rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;font-size:.8rem;color:var(--ink-dim);">
+      <strong>Papéis:</strong><br>
+      <strong>admin</strong> — Acesso total (todas as telas, edita tudo, aprova cadastros).<br>
+      <strong>redesa</strong> — Vê todas as telas, edita apenas a Reunião Semanal.<br>
+      <strong>external</strong> — Vê e edita apenas a Reunião Semanal.
+    </div>
+  `;
+}
+
+async function aprovarPerfil(id) {
+  const { error } = await sb.from('perfis').update({
+    aprovado: true,
+    aprovado_por: state.user.id,
+    aprovado_em: new Date().toISOString(),
+  }).eq('id', id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  showSaveIndicator('saved', 'Aprovado!');
+  loadAprovacoes();
+}
+
+async function rejeitarPerfil(id) {
+  if (!confirm('Rejeitar este cadastro? O usuário não vai conseguir entrar.')) return;
+  // Mantém aprovado=false e marca quem rejeitou (registrado na auditoria)
+  const { error } = await sb.from('perfis').update({
+    aprovado: false,
+    aprovado_por: state.user.id,
+    aprovado_em: null,
+  }).eq('id', id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  showSaveIndicator('saved', 'Rejeitado');
+  loadAprovacoes();
+}
+
+async function revogarAprovacao(id) {
+  if (!confirm('Revogar acesso deste usuário?')) return;
+  const { error } = await sb.from('perfis').update({
+    aprovado: false,
+    aprovado_em: null,
+  }).eq('id', id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  showSaveIndicator('saved', 'Acesso revogado');
+  loadAprovacoes();
+}
+
+async function atualizarPapel(id, novoPapel) {
+  const { error } = await sb.from('perfis').update({ papel: novoPapel }).eq('id', id);
+  if (error) { alert('Erro: ' + error.message); return; }
+  showSaveIndicator('saved', `Papel: ${novoPapel}`);
 }
 
 // ============================================================
