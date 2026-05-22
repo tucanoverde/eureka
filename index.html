@@ -3268,30 +3268,34 @@ async function renderTracking() {
   });
 
   // Tabela histórica
+  // Decisão de produto: as colunas de DISTRIBUIÇÃO (municípios, eficiência, faróis,
+  // status counts, velocity, ticket, gargalo) refletem o ESTADO ATUAL dos municípios
+  // — não os valores que estavam congelados no snapshot semanal (que muitas vezes
+  // estão vazios/0 em registros antigos). A coluna Receita mantém o histórico real
+  // para preservar a linha do tempo.
+  const totalFarAtual = (semanaAtual.quente||0) + (semanaAtual.morno||0) + (semanaAtual.frio||0);
   let htmlTabela = '';
   state.tracking.forEach((t, i) => {
     const prev = i > 0 ? state.tracking[i-1] : null;
     const dRec = prev && prev.receita_potencial > 0 ? (t.receita_potencial - prev.receita_potencial) / prev.receita_potencial : null;
-    const dEfic = prev && prev.eficiencia_dia > 0 ? (t.eficiencia_dia - prev.eficiencia_dia) / prev.eficiencia_dia : null;
-    const totalFar = (t.quente||0) + (t.morno||0) + (t.frio||0);
     htmlTabela += `
-      <tr title="Semana ${t.semana}: snapshot do pipeline em ${t.data_registro ? new Date(t.data_registro).toLocaleString('pt-BR') : '—'}. Receita ${fmtMoney(t.receita_potencial||0)} · ${t.municipios_ativos||0} municípios · Eficiência ${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia)+'/dia' : '—'} · Gargalo: ${t.gargalo||'—'}">
+      <tr title="Semana ${t.semana}: receita registrada ${fmtMoney(t.receita_potencial||0)}. Demais colunas (faróis, status, eficiência, gargalo) refletem o estado ATUAL dos municípios.">
         <td style="font-weight:700;" title="Identificador da semana (ex: W18).">${t.semana}</td>
-        <td title="Data e hora em que esta semana foi registrada.">${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
-        <td class="num" title="Receita Potencial = Forecast Ajustado da semana = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS na época do registro = ${fmtMoney(t.receita_potencial||0)}.">${fmtMoney(t.receita_potencial||0)}</td>
-        <td class="num" title="${dRec !== null ? `Δ Receita = (${fmtMoney(t.receita_potencial)} - ${fmtMoney(prev.receita_potencial)}) ÷ ${fmtMoney(prev.receita_potencial)} = ${(dRec*100).toFixed(1)}% vs semana anterior (${prev.semana}).` : 'Sem semana anterior para comparar.'}">${fmtDeltaVal(dRec)}</td>
-        <td class="num" title="${t.municipios_ativos||0} municípios em ETAPAS_ATIVAS na época deste snapshot.">${t.municipios_ativos||0}</td>
-        <td class="num" title="${t.eficiencia_dia > 0 ? `Eficiência = mediana de (receita_ajustada ÷ dias na etapa) entre os ativos = ${fmtMoney(t.eficiencia_dia)}/dia. Quanto maior, mais receita produzida por dia parado em pipeline.` : 'Eficiência não calculada nesta semana (sem dados de tempo).'}">${t.eficiencia_dia > 0 ? fmtMoney(t.eficiencia_dia) : '—'}</td>
-        <td class="num" title="${dEfic !== null ? `Δ Eficiência = (${fmtMoney(t.eficiencia_dia)} - ${fmtMoney(prev.eficiencia_dia)}) ÷ ${fmtMoney(prev.eficiencia_dia)} = ${(dEfic*100).toFixed(1)}% vs ${prev.semana}.` : 'Sem semana anterior.'}">${fmtDeltaVal(dEfic)}</td>
-        <td class="num" title="Distribuição de faróis na semana: 🔴 Quente ${t.quente||0} (${totalFar>0?((t.quente||0)/totalFar*100).toFixed(0):0}%) · 🟡 Morno ${t.morno||0} · 🔵 Frio ${t.frio||0}. Total com farol: ${totalFar}.">${t.quente||0} 🔴 / ${t.morno||0} 🟡 / ${t.frio||0} 🔵</td>
-        <td class="num" title="${t.sql||0} municípios em SQL na semana.">${t.sql||0}</td>
-        <td class="num" title="${t.r1||0} municípios em R1 na semana.">${t.r1||0}</td>
-        <td class="num" title="${t.r2||0} municípios em R2.">${t.r2||0}</td>
-        <td class="num" title="${t.r3||0} municípios em R3.">${t.r3||0}</td>
-        <td class="num" title="${t.licitacao||0} municípios em Licitação.">${t.licitacao||0}</td>
-        <td class="num" title="${t.velocity > 0 ? `Velocity = (tempo_médio Q + M + F) ÷ 3 = ${t.velocity.toFixed(2)} dias médios por farol. Indicador agregado de velocidade do pipeline.` : 'Velocity não calculada.'}">${t.velocity > 0 ? t.velocity.toFixed(2)+'v' : '—'}</td>
-        <td class="num" title="${t.ticket_medio > 0 ? `Ticket Médio = mediana de (receita por aluno) entre os ativos = ${fmtMoney(t.ticket_medio)}/aluno na semana.` : 'Ticket Médio não calculado.'}">${t.ticket_medio > 0 ? fmtMoney(t.ticket_medio) : '—'}</td>
-        <td title="${t.gargalo ? `Gargalo da semana = ${t.gargalo}. Etapa com maior qtde × tempo_médio (onde a carteira estava mais travada).` : 'Sem gargalo registrado.'}">${escapeHtml(t.gargalo||'—')}</td>
+        <td title="Data em que esta semana foi registrada.">${t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—'}</td>
+        <td class="num" title="Receita Potencial REGISTRADA no momento do snapshot = ${fmtMoney(t.receita_potencial||0)}. Esta coluna preserva o histórico real (não muda).">${fmtMoney(t.receita_potencial||0)}</td>
+        <td class="num" title="${dRec !== null ? `Δ Receita = (${fmtMoney(t.receita_potencial)} − ${fmtMoney(prev.receita_potencial)}) ÷ ${fmtMoney(prev.receita_potencial)} = ${(dRec*100).toFixed(1)}% vs semana anterior (${prev.semana}). Histórico real.` : 'Sem semana anterior para comparar.'}">${fmtDeltaVal(dRec)}</td>
+        <td class="num" title="Municípios em ETAPAS_ATIVAS HOJE = ${semanaAtual.municipios_ativos}. Computado do estado atual dos municípios.">${semanaAtual.municipios_ativos}</td>
+        <td class="num" title="Eficiência ATUAL = ${fmtMoney(semanaAtual.eficiencia_dia)}/dia (mediana de receita_ajustada ÷ dias na etapa entre os ativos).">${semanaAtual.eficiencia_dia > 0 ? fmtMoney(semanaAtual.eficiencia_dia) : '—'}</td>
+        <td class="num" title="Δ Eficiência não se aplica quando as colunas refletem estado atual (sem variação semanal).">${fmtDeltaVal(null)}</td>
+        <td class="num" title="Distribuição ATUAL de faróis (do estado atual dos municípios): 🔴 Quente ${semanaAtual.quente} · 🟡 Morno ${semanaAtual.morno} · 🔵 Frio ${semanaAtual.frio}. Total classificado: ${totalFarAtual}.">${semanaAtual.quente} 🔴 / ${semanaAtual.morno} 🟡 / ${semanaAtual.frio} 🔵</td>
+        <td class="num" title="${semanaAtual.sql} municípios em SQL HOJE.">${semanaAtual.sql}</td>
+        <td class="num" title="${semanaAtual.r1} municípios em R1 HOJE.">${semanaAtual.r1}</td>
+        <td class="num" title="${semanaAtual.r2} municípios em R2 HOJE.">${semanaAtual.r2}</td>
+        <td class="num" title="${semanaAtual.r3} municípios em R3 HOJE.">${semanaAtual.r3}</td>
+        <td class="num" title="${semanaAtual.licitacao} municípios em Licitação HOJE.">${semanaAtual.licitacao}</td>
+        <td class="num" title="Velocity ATUAL = (tempo_médio Q + M + F) ÷ 3 = ${semanaAtual.velocity.toFixed(2)}.">${semanaAtual.velocity > 0 ? semanaAtual.velocity.toFixed(2)+'v' : '—'}</td>
+        <td class="num" title="Ticket Médio ATUAL = mediana de receita por aluno = ${fmtMoney(semanaAtual.ticket_medio)}.">${semanaAtual.ticket_medio > 0 ? fmtMoney(semanaAtual.ticket_medio) : '—'}</td>
+        <td title="Gargalo ATUAL = ${semanaAtual.gargalo} (etapa com maior qtde × tempo médio).">${escapeHtml(semanaAtual.gargalo)}</td>
       </tr>`;
   });
 
@@ -3342,8 +3346,11 @@ async function renderTracking() {
 
       <!-- Tabela histórica -->
       <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;overflow:hidden;">
-        <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
-          <h2 style="font-size:1rem;font-weight:600;">Histórico Semanal</h2>
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;">
+          <div>
+            <h2 style="font-size:1rem;font-weight:600;">Histórico Semanal</h2>
+            <div style="font-size:.72rem;color:var(--ink-dim);margin-top:.25rem;">Receita e Δ Receita são históricos reais. Demais colunas (Municípios, Eficiência, Faróis, Status, Velocity, Ticket, Gargalo) refletem o estado <strong>atual</strong> dos municípios.</div>
+          </div>
           <span style="font-size:.8rem;color:var(--ink-dim);">${state.tracking.length} semanas registradas</span>
         </div>
         <div style="overflow-x:auto;">
