@@ -2150,27 +2150,30 @@ function renderTable() {
   };
 
   const cols = [
-    { key: 'municipio', label: 'Município', sortable: true },
-    { key: 'uf', label: 'UF', sortable: true },
-    { key: 'regiao_administrativa', label: 'Região', sortable: true },
-    { key: 'total_ef', label: 'Alunos EF', sortable: true, num: true },
-    { key: 'receita_potencial', label: 'Receita pot.', sortable: true, num: true, fmt: fmtMoney },
-    { key: 'indicador_performance_ef', label: 'Score', sortable: true, num: true },
-    { key: 'idhm', label: 'IDHM', sortable: true, num: true, fmt: v => fmtNum(v, 3) },
-    { key: 'farol', label: 'Farol', sortable: true },
-    { key: 'status', label: 'Status', sortable: true },
-    { key: 'indicacao', label: 'Indic.', sortable: true },
-    { key: 'prefeito', label: 'Prefeito(a)', sortable: true },
+    { key: 'municipio', label: 'Município', sortable: true, tip: 'Nome do município. Clique numa linha para abrir a ficha completa.' },
+    { key: 'uf', label: 'UF', sortable: true, tip: 'Unidade Federativa (estado).' },
+    { key: 'regiao_administrativa', label: 'Região', sortable: true, tip: 'Região administrativa estadual.' },
+    { key: 'total_ef', label: 'Alunos EF', sortable: true, num: true, tip: 'Total de alunos EF = ef1_alunos + ef2_alunos. Fonte: INEP Censo Escolar.' },
+    { key: 'receita_potencial', label: 'Receita pot.', sortable: true, num: true, fmt: fmtMoney, tip: 'Receita Potencial bruta = ef1×ticket_EF1 + ef2×ticket_EF2 + ei×ticket_EI. Multiplicador aplicado se preenchido no filtro.' },
+    { key: 'indicador_performance_ef', label: 'Score', sortable: true, num: true, tip: 'Score educacional (0-10) combinando IDEB, SAEB e taxas de evasão. Pesos em Configurações.' },
+    { key: 'idhm', label: 'IDHM', sortable: true, num: true, fmt: v => fmtNum(v, 3), tip: 'IDHM (PNUD 2010). Escala 0-1.' },
+    { key: 'farol', label: 'Farol', sortable: true, tip: 'Q=Quente, M=Morno, F=Frio, NV=Não Vale a Pena.' },
+    { key: 'status', label: 'Status', sortable: true, tip: 'Etapa atual no funil de vendas.' },
+    { key: 'indicacao', label: 'Indic.', sortable: true, tip: 'Código do responsável pela indicação.' },
+    { key: 'prefeito', label: 'Prefeito(a)', sortable: true, tip: 'Nome do prefeito (auto-preenchido pela importação TSE 2024).' },
   ];
 
   wrap.innerHTML = `
     <table>
       <thead><tr>
         ${cols.map(c => {
-          const tip = tooltipFonte(c.key);
+          const fonteTip = tooltipFonte(c.key);
+          // Combina tooltip da fonte (de onde veio o dado) + tooltip de descrição/fórmula
+          const titleParts = [c.tip, fonteTip].filter(Boolean);
+          const fullTip = titleParts.join(' · ');
           return `
-          <th data-col="${c.key}" class="${state.sortBy === c.key ? 'sorted' : ''} ${c.num ? 'num' : ''}" ${tip ? `title="${escapeHtml(tip)}"` : ''}>
-            ${c.label}${tip ? ' <span style="opacity:.5; font-size:.7em; font-weight:normal">ⓘ</span>' : ''} ${state.sortBy === c.key ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}
+          <th data-col="${c.key}" class="${state.sortBy === c.key ? 'sorted' : ''} ${c.num ? 'num' : ''}" ${fullTip ? `title="${escapeHtml(fullTip)}"` : ''}>
+            ${c.label}${fullTip ? ' <span style="opacity:.5; font-size:.7em; font-weight:normal">ⓘ</span>' : ''} ${state.sortBy === c.key ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}
           </th>
           `;
         }).join('')}
@@ -2357,7 +2360,7 @@ function renderDrawerComercial(m) {
     <div class="section-title">Responsável Comercial</div>
 
     ${indSelecionado ? `
-    <div style="background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px; padding:1rem; margin-bottom:1rem; display:flex; align-items:center; gap:1rem;">
+    <div style="background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px; padding:1rem; margin-bottom:1rem; display:flex; align-items:center; gap:1rem;" title="Comissão estimada deste município = Receita Potencial bruta (${fmtMoney(receita)}) × % comissão do responsável (${indSelecionado.percentual_comissao ? (indSelecionado.percentual_comissao*100).toFixed(1)+'%' : '0%'}) = ${fmtMoney(comissaoEst)}. Não considera peso de etapa nem impostos — é uma estimativa simples sobre receita total.">
       <div style="width:44px; height:44px; border-radius:50%; background:${avatarColor(indSelecionado.nome)}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1rem; flex-shrink:0;">
         ${avatarLetras(indSelecionado.nome)}
       </div>
@@ -2607,7 +2610,7 @@ function renderDrawerPublico(m) {
 
     <!-- Score e IDHM em destaque -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem;">
-      <div style="background:var(--bg-elev);border:2px solid ${score_info.cor};border-radius:6px;padding:1rem;text-align:center;">
+      <div style="background:var(--bg-elev);border:2px solid ${score_info.cor};border-radius:6px;padding:1rem;text-align:center;" title="Score Educacional (indicador_performance_ef): índice composto que combina IDEB, SAEB e taxas de evasão. Pesos configuráveis em Configurações > Pesos do indicador de performance. Escala 0-10. Faixas: ≥8 Excelente · 7-8 Bom · 6-7 Regular · 5-6 Abaixo · <5 Crítico.">
         <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Score Educacional</div>
         <div style="font-size:2rem;font-weight:700;color:${score_info.cor};font-family:Fraunces,serif;">
           ${m.indicador_performance_ef ? fmtNum(m.indicador_performance_ef,2) : '—'}
@@ -2615,7 +2618,7 @@ function renderDrawerPublico(m) {
         <div style="font-size:.75rem;color:${score_info.cor};font-weight:600;">${score_info.label}</div>
         ${m.indicador_performance_ef ? bar(m.indicador_performance_ef, 10, score_info.cor) : ''}
       </div>
-      <div style="background:var(--bg-elev);border:2px solid ${idhm_info.cor};border-radius:6px;padding:1rem;text-align:center;">
+      <div style="background:var(--bg-elev);border:2px solid ${idhm_info.cor};border-radius:6px;padding:1rem;text-align:center;" title="IDHM (Índice de Desenvolvimento Humano Municipal) calculado pela ONU/PNUD. Combina renda, educação e longevidade. Escala 0-1. Faixas oficiais: ≥0.8 Muito Alto · 0.7-0.8 Alto · 0.6-0.7 Médio · <0.6 Baixo. Fonte: Atlas Brasil PNUD/2010.">
         <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">IDHM 2010</div>
         <div style="font-size:2rem;font-weight:700;color:${idhm_info.cor};font-family:Fraunces,serif;">
           ${m.idhm ? fmtNum(m.idhm,3) : '—'}
@@ -2628,8 +2631,8 @@ function renderDrawerPublico(m) {
     <!-- Cards de indicadores -->
     <div class="section-title" style="margin-top:0;">Educação</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
-      ${card('📚', 'Alunos EF Total', m.total_ef ? fmtNum(m.total_ef) : '—', `EF1: ${fmtNum(m.ef1_alunos||0)} · EF2: ${fmtNum(m.ef2_alunos||0)}`)}
-      ${card('💰', 'Receita Potencial', fmtMoney(receita), `EF1 × R$${EF1} + EF2 × R$${EF2}${EI>0?` + EI × R$${EI}`:''}`, 'var(--accent)')}
+      <div title="Alunos EF Total = ef1_alunos + ef2_alunos. Fonte: INEP Censo Escolar (importado via tela 'Fontes de dados').">${card('📚', 'Alunos EF Total', m.total_ef ? fmtNum(m.total_ef) : '—', `EF1: ${fmtNum(m.ef1_alunos||0)} · EF2: ${fmtNum(m.ef2_alunos||0)}`)}</div>
+      <div title="Receita Potencial bruta deste município = ef1_alunos × R$${EF1} + ef2_alunos × R$${EF2}${EI>0?` + ei_alunos × R$${EI}`:''} = ${fmtMoney(receita)}. Não aplica peso de etapa nem farol.">${card('💰', 'Receita Potencial', fmtMoney(receita), `EF1 × R$${EF1} + EF2 × R$${EF2}${EI>0?` + EI × R$${EI}`:''}`, 'var(--accent)')}</div>
     </div>
 
     <details ${m.ei_alunos_editado_em || m.ei_alunos ? 'open' : ''} style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.85rem 1rem;margin-bottom:1.25rem;">
@@ -2657,16 +2660,16 @@ function renderDrawerPublico(m) {
     </details>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
-      ${card('📊', 'IDEB EF1 2023', m.ideb_ef1 ? fmtNum(m.ideb_ef1,1) : '—', m.ideb_ef2 ? `EF2: ${fmtNum(m.ideb_ef2,1)}` : '—')}
-      ${card('📈', 'SAEB EF1 2023', m.saeb_ef1 ? fmtNum(m.saeb_ef1,1) : '—', m.saeb_ef2 ? `EF2: ${fmtNum(m.saeb_ef2,1)}` : '—')}
-      ${card('✅', 'Aprovação EF', m.aprovacao_ef ? fmtNum(m.aprovacao_ef,1)+'%' : '—', m.abandono_ef ? `Abandono: ${fmtNum(m.abandono_ef,1)}%` : '', m.aprovacao_ef >= 95 ? 'var(--accent)' : 'var(--warn)')}
-      ${card('🏦', 'FUNDEB 2024', m.fundeb_distribuido ? fmtMoney(m.fundeb_distribuido) : '—', m.educacao_total_liquidado ? `Desp. Educ.: ${fmtMoney(m.educacao_total_liquidado)}` : '—')}
+      <div title="IDEB (Índice de Desenvolvimento da Educação Básica) dos Anos Iniciais (EF1) e Anos Finais (EF2). Calculado pelo INEP combinando aprovação (Censo Escolar) com desempenho no SAEB. Escala 0-10. Fonte: INEP IDEB 2023.">${card('📊', 'IDEB EF1 2023', m.ideb_ef1 ? fmtNum(m.ideb_ef1,1) : '—', m.ideb_ef2 ? `EF2: ${fmtNum(m.ideb_ef2,1)}` : '—')}</div>
+      <div title="SAEB (Sistema de Avaliação da Educação Básica) — média da proficiência dos alunos em testes padronizados de português e matemática. Fonte: INEP SAEB 2023.">${card('📈', 'SAEB EF1 2023', m.saeb_ef1 ? fmtNum(m.saeb_ef1,1) : '—', m.saeb_ef2 ? `EF2: ${fmtNum(m.saeb_ef2,1)}` : '—')}</div>
+      <div title="Taxa de Aprovação = alunos aprovados ÷ matriculados × 100 no EF (Anos Iniciais + Finais combinados, rede pública). Abandono = alunos que pararam de frequentar. Fonte: INEP Taxas de Rendimento.">${card('✅', 'Aprovação EF', m.aprovacao_ef ? fmtNum(m.aprovacao_ef,1)+'%' : '—', m.abandono_ef ? `Abandono: ${fmtNum(m.abandono_ef,1)}%` : '', m.aprovacao_ef >= 95 ? 'var(--accent)' : 'var(--warn)')}</div>
+      <div title="FUNDEB = recurso constitucional para Educação Básica recebido pelo município em 2024 (Fundo de Manutenção e Desenvolvimento da Educação Básica). Despesa Educ. = total efetivamente liquidado em ações de educação. Fonte: FNDE / SICONFI.">${card('🏦', 'FUNDEB 2024', m.fundeb_distribuido ? fmtMoney(m.fundeb_distribuido) : '—', m.educacao_total_liquidado ? `Desp. Educ.: ${fmtMoney(m.educacao_total_liquidado)}` : '—')}</div>
     </div>
 
     <div class="section-title">Econômico</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.25rem;">
-      ${card('💹', 'PIB per capita 2021', m.pib_per_capita ? fmtMoney(m.pib_per_capita/100) : '—', 'Fonte: IBGE SIDRA')}
-      ${card('👥', 'Densidade demográfica', m.populacao_2022 ? fmtNum(m.populacao_2022) + ' hab.' : '—', 'Censo 2022')}
+      <div title="PIB per capita = Produto Interno Bruto do município ÷ população. Valor armazenado em centavos (÷100 pra reais). Fonte: IBGE SIDRA 2021.">${card('💹', 'PIB per capita 2021', m.pib_per_capita ? fmtMoney(m.pib_per_capita/100) : '—', 'Fonte: IBGE SIDRA')}</div>
+      <div title="População do município pelo Censo 2022 (IBGE).">${card('👥', 'Densidade demográfica', m.populacao_2022 ? fmtNum(m.populacao_2022) + ' hab.' : '—', 'Censo 2022')}</div>
     </div>
 
     <!-- Edição manual (colapsável) -->
@@ -2976,17 +2979,17 @@ function renderHealth() {
     const cn = cenGlobal[c];
     const conv = { agressivo: cfg.conv_agr, realista: cfg.conv_real, conservador: cfg.conv_cons }[c];
     htmlCenGlobal += `
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Cenário ${c}: aplica taxa de conversão de ${(conv*100).toFixed(0)}% sobre o forecast ajustado. Configure as taxas em Configurações > Cenários de conversão.">
         <div style="font-weight:700;font-size:.95rem;margin-bottom:.75rem;color:var(--accent);text-transform:capitalize;">${c}
           <span style="font-weight:400;font-size:.75rem;color:var(--ink-dim);">(${(conv*100).toFixed(0)}% conversão)</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.8rem;">
-          <div style="color:var(--ink-dim);">Receita</div>
-          <div style="text-align:right;font-weight:600;">${fmtMoney(cn.receita)}</div>
-          <div style="color:var(--ink-dim);">Receita Líquida</div>
-          <div style="text-align:right;">${fmtMoney(cn.recLiq)}</div>
-          <div style="color:var(--ink-dim);font-weight:600;border-top:1px solid var(--line);padding-top:.4rem;">Fat. Redesa</div>
-          <div style="text-align:right;font-weight:700;color:var(--accent);border-top:1px solid var(--line);padding-top:.4rem;">${fmtMoney(cn.redesa)}</div>
+          <div style="color:var(--ink-dim);" title="Receita do cenário = Forecast Ajustado × taxa_conversão (${(conv*100).toFixed(0)}%).">Receita</div>
+          <div style="text-align:right;font-weight:600;" title="${fmtMoney(forecastAjustado)} × ${(conv*100).toFixed(0)}% = ${fmtMoney(cn.receita)}">${fmtMoney(cn.receita)}</div>
+          <div style="color:var(--ink-dim);" title="Receita Líquida = Receita do cenário × (1 - impostos). Impostos = ${(cfg.impostos*100).toFixed(2)}%.">Receita Líquida</div>
+          <div style="text-align:right;" title="${fmtMoney(cn.receita)} × (1 - ${(cfg.impostos*100).toFixed(2)}%) = ${fmtMoney(cn.recLiq)}">${fmtMoney(cn.recLiq)}</div>
+          <div style="color:var(--ink-dim);font-weight:600;border-top:1px solid var(--line);padding-top:.4rem;" title="Faturamento Redesa = Receita Líquida × ${(cfg.redesa*100).toFixed(0)}%. % configurável.">Fat. Redesa</div>
+          <div style="text-align:right;font-weight:700;color:var(--accent);border-top:1px solid var(--line);padding-top:.4rem;" title="${fmtMoney(cn.recLiq)} × ${(cfg.redesa*100).toFixed(0)}% = ${fmtMoney(cn.redesa)}">${fmtMoney(cn.redesa)}</div>
         </div>
       </div>`;
   });
@@ -3003,15 +3006,16 @@ function renderHealth() {
     let htmlCensFarol = '';
     ['agressivo','realista','conservador'].forEach(c => {
       const cn = cens[c];
+      const convC = {agressivo:cfg.conv_agr,realista:cfg.conv_real,conservador:cfg.conv_cons}[c];
       htmlCensFarol += `
-        <div style="background:var(--bg);border-radius:4px;padding:.6rem;">
+        <div style="background:var(--bg);border-radius:4px;padding:.6rem;" title="${c} (${(convC*100).toFixed(0)}% conversão): receita ajustada deste farol ${fmtMoney(rec)} × ${(convC*100).toFixed(0)}% = ${fmtMoney(cn.receita)}. Alunos esperados = ${info.alunos} × ${(convC*100).toFixed(0)}%.">
           <div style="font-size:.7rem;font-weight:600;color:var(--ink-dim);margin-bottom:.4rem;text-transform:capitalize;">${c}</div>
           <div style="font-size:.85rem;font-weight:700;">${fmtMoney(cn.receita)}</div>
-          <div style="font-size:.7rem;color:var(--ink-dim);">${fmtNum(Math.round(info.alunos * {agressivo:cfg.conv_agr,realista:cfg.conv_real,conservador:cfg.conv_cons}[c]))} alunos</div>
+          <div style="font-size:.7rem;color:var(--ink-dim);">${fmtNum(Math.round(info.alunos * convC))} alunos</div>
         </div>`;
     });
     htmlFarol += `
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;">
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Farol ${farolLabel[f]}: ${info.count} municípios ativos com este farol. Receita ajustada total = SOMA(receita × peso_etapa) = ${fmtMoney(rec)}. Tempo médio na etapa atual: ${info.tempoMedio.toFixed(0)} dias.">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <span style="font-weight:700;font-size:.95rem;color:${farolCor[f]};">${farolLabel[f]}</span>
           <span style="font-size:.75rem;color:var(--ink-dim);">${info.count} mun · ${fmtNum(info.alunos)} alunos · ${info.tempoMedio.toFixed(0)}d médio</span>
@@ -3027,15 +3031,16 @@ function renderHealth() {
   let htmlEtapas = '';
   porEtapa.forEach(e => {
     const cenE = calcCenarios(e.fore, cfg);
+    const lab = e.etapa === 'Licitacao' ? 'Licitação' : e.etapa;
     htmlEtapas += `
-      <tr>
-        <td style="font-weight:700;color:var(--accent);">${e.etapa === 'Licitacao' ? 'Licitação' : e.etapa}</td>
-        <td class="num">${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%</td>
-        <td class="num">${e.count}</td>
-        <td class="num">${fmtMoney(e.rec)}</td>
-        <td class="num" style="font-weight:600;">${fmtMoney(e.fore)}</td>
-        <td class="num">${fmtMoney(cenE.agressivo.redesa)}</td>
-        <td class="num">${e.tempoMedio.toFixed(1)}d</td>
+      <tr title="${lab}: ${e.count} municípios. Receita bruta = SOMA(ef1×${cfg.ef1} + ef2×${cfg.ef2}). Forecast = receita × ${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%. Fat. Redesa Agressivo = forecast × (1-${(cfg.impostos*100).toFixed(2)}%) × ${(cfg.redesa*100).toFixed(0)}%.">
+        <td style="font-weight:700;color:var(--accent);" title="Nome da etapa do funil. Ordem: Prioritária → SQL → R1 → R2 → R3 → Licitação → Empenho → Entrega → Win.">${lab}</td>
+        <td class="num" title="Peso da etapa (probabilidade de conversão). Configurável em Configurações > Pesos de Forecast por Etapa.">${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%</td>
+        <td class="num" title="Quantidade de municípios com status = ${lab}.">${e.count}</td>
+        <td class="num" title="Receita Potencial (bruta) = SOMA(ef1_alunos × ${cfg.ef1} + ef2_alunos × ${cfg.ef2}${cfg.ei>0?` + ei_alunos × ${cfg.ei}`:''}) dos ${e.count} municípios. SEM aplicar peso de etapa.">${fmtMoney(e.rec)}</td>
+        <td class="num" style="font-weight:600;" title="Forecast Ajustado = Receita Potencial × peso da etapa (${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%) = ${fmtMoney(e.rec)} × ${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}% = ${fmtMoney(e.fore)}.">${fmtMoney(e.fore)}</td>
+        <td class="num" title="Fat. Redesa no cenário Agressivo = Forecast × (1-impostos) × ${(cfg.redesa*100).toFixed(0)}% × 100% conv. = ${fmtMoney(cenE.agressivo.redesa)}.">${fmtMoney(cenE.agressivo.redesa)}</td>
+        <td class="num" title="Tempo médio (em dias) dos municípios desta etapa, contado desde a data de entrada na etapa (data_${e.etapa.toLowerCase()}).">${e.tempoMedio.toFixed(1)}d</td>
       </tr>`;
   });
   const totalRec  = porEtapa.reduce((s,e)=>s+e.rec,0);
@@ -3102,9 +3107,13 @@ function renderHealth() {
           <table class="data-table" style="font-size:.82rem;">
             <thead>
               <tr>
-                <th>Etapa</th><th class="num">Peso</th><th class="num">Municípios</th>
-                <th class="num">Receita Potencial</th><th class="num">Forecast (Ajustado)</th>
-                <th class="num">Fat. Redesa</th><th class="num">Tempo Médio</th>
+                <th title="Etapa do funil de vendas.">Etapa</th>
+                <th class="num" title="Probabilidade de conversão da etapa (peso). Configurável.">Peso</th>
+                <th class="num" title="Quantidade de municípios nesta etapa.">Municípios</th>
+                <th class="num" title="Receita Potencial = SOMA(ef1×ticket_EF1 + ef2×ticket_EF2 + ei×ticket_EI) dos municípios da etapa. Sem peso.">Receita Potencial</th>
+                <th class="num" title="Forecast Ajustado = Receita × peso_etapa.">Forecast (Ajustado)</th>
+                <th class="num" title="Fat. Redesa Agressivo = Forecast × (1-impostos) × 50%.">Fat. Redesa</th>
+                <th class="num" title="Tempo médio em dias dos municípios na etapa.">Tempo Médio</th>
               </tr>
             </thead>
             <tbody>${htmlEtapas}</tbody>
@@ -3327,13 +3336,22 @@ async function renderTracking() {
           <table class="data-table" style="font-size:.78rem;min-width:1100px;">
             <thead>
               <tr>
-                <th>Semana</th><th>Data</th>
-                <th class="num">Receita</th><th class="num">Δ Receita</th>
-                <th class="num">Municípios</th>
-                <th class="num">Efic. (R$/dia)</th><th class="num">Δ Eficiência</th>
-                <th class="num">Faróis</th>
-                <th class="num">SQL</th><th class="num">R1</th><th class="num">R2</th><th class="num">R3</th><th class="num">Lic.</th>
-                <th class="num">Velocity</th><th class="num">Ticket</th><th>Gargalo</th>
+                <th title="Identificador da semana (ex: W18). Definido ao registrar a semana.">Semana</th>
+                <th title="Data e hora em que a semana foi registrada.">Data</th>
+                <th class="num" title="Receita Potencial = Forecast Ajustado da época em que a semana foi registrada.">Receita</th>
+                <th class="num" title="Δ Receita = variação percentual da receita vs semana anterior. (atual - anterior) / anterior.">Δ Receita</th>
+                <th class="num" title="Quantidade de municípios em ETAPAS_ATIVAS na época.">Municípios</th>
+                <th class="num" title="Eficiência = mediana de (receita_ajustada ÷ dias na etapa) entre os ativos. R$ produzidos por dia de pipeline.">Efic. (R$/dia)</th>
+                <th class="num" title="Δ Eficiência = variação % da eficiência vs semana anterior.">Δ Eficiência</th>
+                <th class="num" title="Distribuição de faróis: 🔴 Quente / 🟡 Morno / 🔵 Frio. Contagem direta de cada farol.">Faróis</th>
+                <th class="num" title="Municípios em SQL na época.">SQL</th>
+                <th class="num" title="Municípios em R1 na época.">R1</th>
+                <th class="num" title="Municípios em R2.">R2</th>
+                <th class="num" title="Municípios em R3.">R3</th>
+                <th class="num" title="Municípios em Licitação.">Lic.</th>
+                <th class="num" title="Velocity = média do tempo médio dos faróis Q+M+F dividido por 3. Indicador agregado de velocidade do pipeline.">Velocity</th>
+                <th class="num" title="Ticket Médio (mediana) = receita por aluno entre os municípios ativos.">Ticket</th>
+                <th title="Gargalo = etapa com maior tempo desperdiçado (qtde × tempo médio).">Gargalo</th>
               </tr>
             </thead>
             <tbody>
@@ -3523,20 +3541,20 @@ async function renderReuniao() {
         <table class="data-table" style="font-size:.78rem;">
           <thead>
             <tr>
-              <th>Município</th>
-              <th>Farol</th>
-              <th class="num">Alunos</th>
-              <th class="num">Receita Aj.</th>
-              <th>Status</th>
-              <th class="num">Dias</th>
-              <th>Health</th>
-              <th class="num">Velocity</th>
-              <th>Ação</th>
-              <th style="min-width:160px;">Próxima Ação</th>
-              <th style="min-width:100px;">Data</th>
-              <th style="min-width:110px;">Responsável</th>
-              <th style="min-width:130px;">Bloqueio</th>
-              <th style="min-width:140px;">Fechamento</th>
+              <th title="Nome do município. Clique pra abrir a ficha completa.">Município</th>
+              <th title="Farol de prioridade: Quente (Q), Morno (M), Frio (F) ou Não Vale (NV). Define o tempo de referência do health.">Farol</th>
+              <th class="num" title="Alunos EF = ef1_alunos + ef2_alunos.">Alunos</th>
+              <th class="num" title="Receita Ajustada = (ef1×ticket_EF1 + ef2×ticket_EF2${cfg.ei>0?' + ei×ticket_EI':''}) × peso_etapa do município.">Receita Aj.</th>
+              <th title="Etapa atual no funil (SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win).">Status</th>
+              <th class="num" title="Dias na etapa atual = hoje - data de entrada na etapa (campo data_status).">Dias</th>
+              <th title="Health do município. 🟢 = dentro do tempo médio do farol; 🟡 = até 30-50% acima; 🔴 = atrasado. Quente: 1.5x · Morno: 1.3x · Frio: 1.2x.">Health</th>
+              <th class="num" title="Velocity = dias na etapa ÷ tempo médio do farol. < 1 mais rápido que a média, > 1 mais lento.">Velocity</th>
+              <th title="Ação recomendada: 'Agir Hoje' (vermelho + receita ≥ 1M), 'Cobrar' (vermelho), 'Acompanhar' (etapas finais), 'Nutrir' (etapas iniciais).">Ação</th>
+              <th style="min-width:160px;" title="Próxima ação combinada com o município. Salvo no campo proxima_acao.">Próxima Ação</th>
+              <th style="min-width:100px;" title="Data prevista para a próxima ação.">Data</th>
+              <th style="min-width:110px;" title="Responsável pela próxima ação. Datalist sugere REDESA / EUREKA / REDESA-EUREKA.">Responsável</th>
+              <th style="min-width:130px;" title="Algo que está travando o avanço deste município (não confundir com risco).">Bloqueio</th>
+              <th style="min-width:140px;" title="Fechamento da semana — registro do que foi feito/decidido. Salvo na tabela reuniao_semanal.">Fechamento</th>
             </tr>
           </thead>
           <tbody>
@@ -4688,22 +4706,22 @@ async function renderIndicadores() {
 
       <!-- KPIs do forecast -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
-        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;">
+        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;" title="Forecast = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS. Equivale à célula Health!A24 da planilha. Mesmo valor que aparece em Dashboard, Health, Tracking e Reunião Semanal.">
           <div style="font-size:.72rem;opacity:.8;">Forecast (Health!A24)</div>
           <div style="font-size:1.2rem;font-weight:700;">${fmtMoney(forecastTotal)}</div>
           <div style="font-size:.7rem;opacity:.7;">= SUM(receita × peso_etapa)</div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Faturamento Redesa = Forecast × (1 - impostos ${(cfg.impostos*100).toFixed(2)}%) × ${(cfg.redesa*100).toFixed(0)}% = ${fmtMoney(forecastTotal)} × ${((1-cfg.impostos)*100).toFixed(2)}% × ${(cfg.redesa*100).toFixed(0)}% = ${fmtMoney(redesa)}.">
           <div style="font-size:.72rem;color:var(--ink-dim);">Fat. Redesa</div>
           <div style="font-size:1.2rem;font-weight:700;">${fmtMoney(redesa)}</div>
           <div style="font-size:.7rem;color:var(--ink-faint);">= forecast × (1−imp) × ${(cfg.redesa*100).toFixed(0)}%</div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Total de alunos (EF1+EF2${cfg.ei>0?'+EI':''}) somando todos os municípios em ETAPAS_ATIVAS. Não pondera por etapa nem farol.">
           <div style="font-size:.72rem;color:var(--ink-dim);">Total Alunos no Forecast</div>
           <div style="font-size:1.2rem;font-weight:700;">${fmtNum(alunosTotais)}</div>
-          <div style="font-size:.7rem;color:var(--ink-faint);">EF1 + EF2 · ${ativos.length} municípios ativos</div>
+          <div style="font-size:.7rem;color:var(--ink-faint);">EF1 + EF2${cfg.ei>0?' + EI':''} · ${ativos.length} municípios ativos</div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Ticket Médio = Forecast ÷ Total de Alunos = ${fmtMoney(forecastTotal)} ÷ ${fmtNum(alunosTotais)} = ${alunosTotais > 0 ? fmtMoney(forecastTotal/alunosTotais) : '—'} por aluno. Quanto cada aluno representa em receita ajustada.">
           <div style="font-size:.72rem;color:var(--ink-dim);">Ticket Médio</div>
           <div style="font-size:1.2rem;font-weight:700;">${alunosTotais > 0 ? fmtMoney(forecastTotal/alunosTotais) : '—'}</div>
           <div style="font-size:.7rem;color:var(--ink-faint);">forecast / alunos totais</div>
@@ -4711,23 +4729,23 @@ async function renderIndicadores() {
       </div>
 
       <!-- Modelo de Remuneração resumido -->
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;margin-bottom:1.5rem;">
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;margin-bottom:1.5rem;" title="Distribuição do Faturamento Redesa (${fmtMoney(redesa)}) entre os papéis. Apresentador = SQL Abertura + R1 Participação + Distribuição (calculado). Equipe = 1 - (Apres + Consol + Gestão + OPEX + Internalizado). LM/MV/Edu = Equipe ÷ 4 cada. Fundo = Equipe - LCM - LM - MV - Edu (resíduo). Editar em Configurações > Modelo de Remuneração.">
         <div style="font-size:.8rem;font-weight:600;color:var(--ink-dim);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">Distribuição do Faturamento Redesa</div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:.8rem;">
           ${[
-            ['Apresentador', apres, 'var(--accent)'],
-            ['Consolidador', consol, 'var(--ink-dim)'],
-            ['Gestão', gestao, 'var(--ink)'],
-            ['OPEX', opex, 'var(--ink)'],
-            ['Internalizado', interal, 'var(--ink)'],
-            ['Equipe', equipe, 'var(--gold)'],
-            ['LM', lm_pct, 'var(--gold)'],
-            ['MV', mv_pct, 'var(--gold)'],
-            ['LCM', lcm_in, 'var(--blue)'],
-            ['Edu', edu_pct, 'var(--gold)'],
-            ['Fundo', fundo, 'var(--gold)'],
-          ].map(([n,p,c]) => `
-            <div style="text-align:center;min-width:70px;">
+            ['Apresentador', apres, 'var(--accent)', 'Apresentador = SQL Abertura + R1 Participação + Distribuição. Soma das tarefas comerciais do responsável que apresentou a oportunidade.'],
+            ['Consolidador', consol, 'var(--ink-dim)', 'Consolidador = quem fecha a venda após a apresentação. Input direto em Configurações.'],
+            ['Gestão', gestao, 'var(--ink)', 'Gestão = % alocado para gerência comercial e estratégica.'],
+            ['OPEX', opex, 'var(--ink)', 'OPEX = despesas operacionais (overhead) da estrutura comercial.'],
+            ['Internalizado', interal, 'var(--ink)', 'Internalizado = % retido pela Redesa antes de distribuir.'],
+            ['Equipe', equipe, 'var(--gold)', 'Equipe = resíduo automático = 1 - (Apres + Consol + Gestão + OPEX + Internalizado). É a parcela que sobra para a equipe operacional.'],
+            ['LM', lm_pct, 'var(--gold)', 'LM = Equipe ÷ 4. Fatia individual de uma das 4 frentes da equipe.'],
+            ['MV', mv_pct, 'var(--gold)', 'MV = Equipe ÷ 4.'],
+            ['LCM', lcm_in, 'var(--blue)', 'LCM = % editável em Configurações (não é Equipe÷4 — é input).'],
+            ['Edu', edu_pct, 'var(--gold)', 'Edu = Equipe ÷ 4.'],
+            ['Fundo', fundo, 'var(--gold)', 'Fundo = Equipe - LCM - LM - MV - Edu. Resíduo destinado a reserva/fundo da equipe.'],
+          ].map(([n,p,c,explain]) => `
+            <div style="text-align:center;min-width:70px;" title="${escapeHtml(explain)} Hoje: ${(p*100).toFixed(2)}% × ${fmtMoney(redesa)} = ${fmtMoney(redesa*p)}">
               <div style="font-weight:700;color:${c};">${(p*100).toFixed(2)}%</div>
               <div style="color:var(--ink-dim);font-size:.72rem;">${n}</div>
               <div style="font-size:.72rem;color:var(--accent);">${fmtMoney(redesa*p)}</div>
@@ -4744,20 +4762,20 @@ async function renderIndicadores() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Código</th>
-            <th>Telefone</th>
-            <th class="num">% Apresentador</th>
-            <th class="num">Mun. Ativos</th>
-            <th class="num">Alunos (ativos)</th>
-            <th class="num">Forecast (pipeline)</th>
-            <th class="num">Comissão Est.</th>
-            <th>Ativo</th>
+            <th title="Código curto do responsável (ex: LCM, MNS).">Código</th>
+            <th title="Telefone de contato (informativo).">Telefone</th>
+            <th title="Percentual de comissão sobre o Fat. Redesa dos municípios deste responsável. Configurável editando o indicador.">% Apresentador</th>
+            <th class="num" title="Quantidade de municípios em pipeline ativo (ETAPAS_ATIVAS) que têm este responsável como indicacao.">Mun. Ativos</th>
+            <th class="num" title="SOMA(ef1+ef2${cfg.ei>0?'+ei':''}) dos municípios em pipeline deste responsável.">Alunos (ativos)</th>
+            <th class="num" title="Forecast = SOMA(receita × peso_etapa) dos municípios em pipeline deste responsável. Mesmo cálculo do Health.">Forecast (pipeline)</th>
+            <th class="num" title="Comissão Estimada = Forecast × (1 - impostos) × ${(cfg.redesa*100).toFixed(0)}% × % Apresentador. É a fatia do Faturamento Redesa que cabe ao responsável.">Comissão Est.</th>
+            <th title="Marcado como ativo no banco (campo ativo do indicador).">Ativo</th>
           </tr></thead>
           <tbody>
             ${(indicadores || []).map(i => {
               const d = calcIndicador(i);
               return `
-                <tr onclick="editarIndicador('${i.id}')" style="cursor:pointer;">
+                <tr onclick="editarIndicador('${i.id}')" style="cursor:pointer;" title="${escapeHtml(i.nome||i.codigo)}: ${d.muns} municípios · ${fmtNum(d.alunos)} alunos · Forecast ${fmtMoney(d.fore)} · Comissão = ${fmtMoney(d.fore)} × ${((1-cfg.impostos)*100).toFixed(2)}% × ${(cfg.redesa*100).toFixed(0)}% × ${((i.percentual_comissao||0)*100).toFixed(2)}% = ${fmtMoney(d.comissao)}">
                   <td><strong>${escapeHtml(i.codigo)}</strong></td>
                   <td style="font-size:.78rem;color:var(--ink-dim);">${escapeHtml(i.telefone||'—')}</td>
                   <td class="num">${((i.percentual_comissao||0)*100).toFixed(2)}%</td>
