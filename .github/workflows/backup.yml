@@ -5,10 +5,13 @@ on:
     - cron: '0 6 * * *'  # Todo dia às 06:00 UTC (03:00 Brasília)
   workflow_dispatch:       # Permite rodar manualmente
 
+permissions:
+  contents: write          # garante que o git push do bot funcione
+
 jobs:
   backup:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repositório
         uses: actions/checkout@v4
@@ -20,6 +23,10 @@ jobs:
 
       - name: Instalar dependências
         run: pip install requests
+
+      - name: Definir data do backup
+        id: data
+        run: echo "BACKUP_DATE=$(date +'%Y-%m-%d')" >> "$GITHUB_ENV"
 
       - name: Exportar backup do Supabase
         env:
@@ -40,27 +47,31 @@ jobs:
 
           tabelas = [
               'municipios',
-              'municipios_historico', 
+              'municipios_historico',
               'pipeline_tracking',
               'indicadores_externos',
               'perfis',
               'fontes_dados',
+              'reuniao_semanal',
+              'configuracoes',
+              'atividades',
           ]
 
-          data = datetime.now().strftime('%Y-%m-%d')
+          data = os.environ['BACKUP_DATE']
           os.makedirs(f'backups/{data}', exist_ok=True)
+          resumo = []
 
           for tabela in tabelas:
               print(f'Exportando {tabela}...')
               all_rows = []
               offset = 0
               limit = 1000
-              
+
               while True:
                   r = requests.get(
                       f'{url}/rest/v1/{tabela}',
                       headers={**headers, 'Range': f'{offset}-{offset+limit-1}'},
-                      params={'select': '*', 'order': 'id'}
+                      params={'select': '*'}
                   )
                   if r.status_code not in [200, 206]:
                       print(f'  Erro {r.status_code}: {r.text[:100]}')
@@ -76,6 +87,12 @@ jobs:
               with open(f'backups/{data}/{tabela}.json', 'w', encoding='utf-8') as f:
                   json.dump(all_rows, f, ensure_ascii=False, indent=2, default=str)
               print(f'  {len(all_rows)} registros salvos')
+              resumo.append(f'- {tabela}: {len(all_rows)} registros')
+
+          with open(f'backups/{data}/_resumo.txt', 'w', encoding='utf-8') as f:
+              f.write(f'Backup CRM Eureka — {data}\n\n')
+              f.write('\n'.join(resumo))
+              f.write(f'\n\nTotal de tabelas: {len(tabelas)}\n')
 
           print(f'Backup completo: {data}')
           EOF
@@ -97,10 +114,56 @@ jobs:
           print('Limpeza OK')
           "
 
+      - name: Compactar pasta do dia em ZIP
+        id: zip
+        run: |
+          cd backups
+          zip -r "../backup-eureka-${BACKUP_DATE}.zip" "${BACKUP_DATE}/"
+          cd ..
+          ls -lh "backup-eureka-${BACKUP_DATE}.zip"
+          # Tamanho amigável e total de registros, pro corpo do email
+          echo "ZIP_SIZE=$(du -h backup-eureka-${BACKUP_DATE}.zip | cut -f1)" >> "$GITHUB_ENV"
+          echo "RESUMO_PATH=backups/${BACKUP_DATE}/_resumo.txt" >> "$GITHUB_ENV"
+
+      - name: Enviar backup por email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Backup CRM Eureka — ${{ env.BACKUP_DATE }}"
+          to: mauricio@redesa.co
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            Backup automático do CRM Eureka para ${{ env.BACKUP_DATE }}.
+
+            Anexo: backup-eureka-${{ env.BACKUP_DATE }}.zip (${{ env.ZIP_SIZE }})
+
+            Tabelas inclusas:
+            • municipios
+            • municipios_historico
+            • pipeline_tracking
+            • indicadores_externos
+            • perfis
+            • fontes_dados
+            • reuniao_semanal
+            • configuracoes
+            • atividades
+
+            Backup também disponível no GitHub:
+            https://github.com/tucanoverde/eureka/tree/main/backups/${{ env.BACKUP_DATE }}
+
+            ---
+            Este email é gerado automaticamente todo dia às 03:00 (Brasília).
+            Em caso de problema, fale com Cesar.
+          attachments: backup-eureka-${{ env.BACKUP_DATE }}.zip
+
       - name: Commit e push do backup
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add backups/
-          git diff --staged --quiet || git commit -m "backup automático $(date +'%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "backup automático ${BACKUP_DATE}"
           git push
