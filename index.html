@@ -1665,7 +1665,7 @@ async function loadAprovacoes() {
       </div>
       <div style="display:flex;gap:.5rem;align-items:center;">
         <label style="font-size:.72rem;color:var(--ink-dim);">Papel</label>
-        <select onchange="atualizarPapel('${p.id}', this.value)" ${isMeMesmo?'disabled title="Admin fixo, não pode mudar"':''}
+        <select onchange="atualizarPapel('${p.id}', this.value)" ${isMeMesmo?'disabled title="Você não pode mudar o próprio papel (prevenção de lockout). Outro admin precisa fazer isso."':''}
           style="font:inherit;font-size:.82rem;padding:4px 8px;border:1px solid var(--line-strong);border-radius:3px;background:var(--bg);">
           <option value="admin"    ${p.papel==='admin'?'selected':''}>admin</option>
           <option value="redesa"   ${p.papel==='redesa'?'selected':''}>redesa</option>
