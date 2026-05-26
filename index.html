@@ -1650,7 +1650,9 @@ async function loadAprovacoes() {
   const aprovados = (perfis||[]).filter(p =>  p.aprovado);
 
   const rowCard = (p, isPendente) => {
-    const isEsteAdmin = ADMIN_EMAILS.includes((p.email||'').toLowerCase()) || p.papel === 'admin' && p.id === state.user.id;
+    // Só trava o usuário logado (pra evitar auto-demote/lockout).
+    // Admins hardcoded podem ter papel alterado por outro admin.
+    const isMeMesmo = p.id === state.user.id;
     return `
     <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;padding:1rem;margin-bottom:.6rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
       <div style="flex:1;min-width:240px;">
@@ -1663,7 +1665,7 @@ async function loadAprovacoes() {
       </div>
       <div style="display:flex;gap:.5rem;align-items:center;">
         <label style="font-size:.72rem;color:var(--ink-dim);">Papel</label>
-        <select onchange="atualizarPapel('${p.id}', this.value)" ${isEsteAdmin?'disabled title="Admin fixo, não pode mudar"':''}
+        <select onchange="atualizarPapel('${p.id}', this.value)" ${isMeMesmo?'disabled title="Admin fixo, não pode mudar"':''}
           style="font:inherit;font-size:.82rem;padding:4px 8px;border:1px solid var(--line-strong);border-radius:3px;background:var(--bg);">
           <option value="admin"    ${p.papel==='admin'?'selected':''}>admin</option>
           <option value="redesa"   ${p.papel==='redesa'?'selected':''}>redesa</option>
@@ -1672,7 +1674,7 @@ async function loadAprovacoes() {
         ${isPendente
           ? `<button class="btn primary small" onclick="aprovarPerfil('${p.id}')">✅ Aprovar</button>
              <button class="btn ghost small"   onclick="rejeitarPerfil('${p.id}')">❌ Rejeitar</button>`
-          : `<button class="btn ghost small"   onclick="revogarAprovacao('${p.id}')" ${isEsteAdmin?'disabled':''}>🔒 Revogar</button>`
+          : `<button class="btn ghost small"   onclick="revogarAprovacao('${p.id}')" ${isMeMesmo?'disabled':''}>🔒 Revogar</button>`
         }
       </div>
     </div>`;
