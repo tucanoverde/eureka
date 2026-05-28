@@ -3976,7 +3976,7 @@ async function renderReuniao() {
                       oninput="autoSizeTextarea(this)"
                       onfocus="this.style.minHeight='90px';this.style.borderColor='var(--accent)'"
                       onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
-                      onchange="salvarFechamentoSemana('${m.id}', this.value)">${escapeHtml(m.reg?.fechamento_semana||'')}</textarea>
+                      onchange="salvarCampoRapido('${m.id}','fechamento_semana',this.value)">${escapeHtml(m.reg?.fechamento_semana ?? m.fechamento_semana ?? '')}</textarea>
                   </td>
                 </tr>
               `;}).join('')}
@@ -4022,7 +4022,10 @@ async function registrarSemanaReuniao() {
   const semana = prompt('Nome da semana (ex: W18):');
   if (!semana) return;
   const cfg = getCfg();
-  const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  // Mesma base da tabela operacional: SQL→Win (exclui Prioritária)
+  const ativos = state.municipios.filter(m =>
+    ETAPAS_ATIVAS.includes(m.status) && m.status !== 'Prioritaria'
+  );
   const tmFarol = calcTempoMedioFarol(state.municipios);
 
   const registros = ativos.map(m => ({
@@ -4033,13 +4036,15 @@ async function registrarSemanaReuniao() {
     data_proxima_acao: m.data_proxima_acao || null,
     responsavel: m.responsavel || null,
     bloqueio: m.bloqueio || null,
-    fechamento_semana: null,
+    fechamento_semana: m.fechamento_semana || null,  // captura o fechamento digitado na reunião
     criado_por: state.user.id,
   }));
 
+  if (registros.length === 0) { alert('Nenhum município ativo para registrar.'); return; }
+
   const { error } = await sb.from('reuniao_semanal').insert(registros);
   if (error) { alert('Erro: ' + error.message); return; }
-  showSaveIndicator('saved', `Semana ${semana} registrada!`);
+  showSaveIndicator('saved', `Semana ${semana} registrada com ${registros.length} municípios!`);
   renderReuniao();
 }
 
