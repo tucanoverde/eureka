@@ -3939,8 +3939,8 @@ async function renderReuniao() {
               <th class="num" title="Receita Ajustada = (ef1×ticket_EF1 + ef2×ticket_EF2${cfg.ei>0?' + ei×ticket_EI':''}) × peso_etapa do município.">Receita Aj.</th>
               <th title="Etapa atual no funil (SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win).">Status</th>
               <th class="num" title="Dias na etapa atual = hoje - data de entrada na etapa (campo data_status).">Dias</th>
-              <th title="Health do município. 🟢 = dentro do tempo médio do farol; 🟡 = até 30-50% acima; 🔴 = atrasado. Quente: 1.5x · Morno: 1.3x · Frio: 1.2x.">Health</th>
-              <th class="num" title="Velocity = dias na etapa ÷ tempo médio do farol. < 1 mais rápido que a média, > 1 mais lento.">Velocity</th>
+              <th title="Health: compara os dias na etapa com a referência DA ETAPA (média dos municípios na mesma etapa, ou prazo fixo de Configurações se houver <2). 🟢 dentro do prazo · 🟡 até 30% acima · 🔴 acima disso.">Health</th>
+              <th class="num" title="Velocity = dias na etapa ÷ referência da etapa. < 1 mais rápido que o esperado, > 1 mais lento.">Velocity</th>
               <th title="Ação recomendada: 'Agir Hoje' (vermelho + receita ≥ 1M), 'Cobrar' (vermelho), 'Acompanhar' (etapas finais), 'Nutrir' (etapas iniciais).">Ação</th>
               <th style="min-width:160px;" title="Próxima ação combinada com o município. Salvo no campo proxima_acao.">Próxima Ação</th>
               <th style="min-width:100px;" title="Data prevista para a próxima ação.">Data</th>
