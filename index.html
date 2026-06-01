@@ -3904,6 +3904,11 @@ async function renderReuniao() {
           ${semanasUnicas.map(s => `<option value="${escapeHtml(s)}" ${semanaSelecionada===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
         </select>
         <button class="btn primary" onclick="registrarSemanaReuniao()">📋 Registrar semana</button>
+        <button class="btn ghost admin-only" onclick="zerarSemanaAtual()"
+          style="border-color:var(--danger);color:var(--danger);"
+          title="Apaga próxima ação, data, responsável, bloqueio e fechamento de todos os municípios ativos da semana atual. Não afeta o histórico de semanas registradas. Requer senha.">
+          🧹 Zerar Semana Atual
+        </button>
       </div>
     </div>
     <div class="page-body">
@@ -4038,6 +4043,62 @@ async function renderReuniao() {
   setTimeout(() => {
     document.querySelectorAll('#pageContent textarea').forEach(t => autoSizeTextarea(t));
   }, 0);
+}
+
+// Senha pra zerar a semana atual (admin only). Pra trocar, edite aqui.
+const SENHA_ZERAR_SEMANA = 'REDESA2026';
+
+async function zerarSemanaAtual() {
+  if (!enforceAdmin('⛔ Apenas administradores podem zerar a semana.')) return;
+  if (state.semanaSelecionada) {
+    alert('Você está vendo a semana "' + state.semanaSelecionada + '" do histórico.\n\nVolte para "Semana atual" primeiro. Este botão limpa apenas a semana corrente — não mexe em semanas já registradas.');
+    return;
+  }
+
+  const senha = prompt('🔒 Senha de administrador para zerar a semana atual:');
+  if (senha === null) return; // cancelou
+  if (senha !== SENHA_ZERAR_SEMANA) {
+    alert('❌ Senha incorreta.');
+    return;
+  }
+
+  const ativos = state.municipios.filter(m =>
+    ETAPAS_ATIVAS.includes(m.status) && m.status !== 'Prioritaria'
+  );
+  if (ativos.length === 0) { alert('Nenhum município ativo na semana atual.'); return; }
+
+  if (!confirm(
+    `⚠️ ATENÇÃO\n\n` +
+    `Esta ação vai APAGAR estes campos de ${ativos.length} municípios ativos:\n` +
+    `  • Próxima Ação\n  • Data da próxima ação\n  • Responsável\n  • Bloqueio\n  • Fechamento\n\n` +
+    `O histórico de semanas registradas NÃO é afetado.\n\nTem certeza?`
+  )) return;
+
+  const ids = ativos.map(m => m.id);
+  const { error } = await sb.from('municipios').update({
+    proxima_acao: null,
+    data_proxima_acao: null,
+    responsavel: null,
+    bloqueio: null,
+    fechamento_semana: null,
+    atualizado_por: state.user.id,
+  }).in('id', ids);
+
+  if (error) { alert('Erro ao zerar: ' + error.message); return; }
+
+  // Atualiza state local
+  state.municipios.forEach(m => {
+    if (ids.includes(m.id)) {
+      m.proxima_acao = null;
+      m.data_proxima_acao = null;
+      m.responsavel = null;
+      m.bloqueio = null;
+      m.fechamento_semana = null;
+    }
+  });
+
+  showSaveIndicator('saved', `🧹 ${ids.length} municípios zerados`);
+  renderReuniao();
 }
 
 async function registrarSemanaReuniao() {
