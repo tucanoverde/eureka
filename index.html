@@ -1461,6 +1461,7 @@ document.getElementById('signupForm').addEventListener('submit', async e => {
     await sb.from('perfis').upsert({
       id: data.user.id,
       nome: nomeVal || emailVal,
+      email: emailVal,
       papel: papelAuto,
       aprovado: aprovadoAuto,
     }, { onConflict: 'id' });
@@ -1500,7 +1501,7 @@ async function initApp() {
   // Admins hardcoded sempre entram como admin aprovado (auto-correção)
   if (ADMIN_EMAILS.includes((state.user.email||'').toLowerCase())) {
     if (!perfil || perfil.papel !== 'admin' || perfil.aprovado !== true) {
-      const fix = { id: state.user.id, nome: perfil?.nome || state.user.email, papel: 'admin', aprovado: true };
+      const fix = { id: state.user.id, nome: perfil?.nome || state.user.email, email: state.user.email, papel: 'admin', aprovado: true };
       const { data: upserted } = await sb.from('perfis').upsert(fix, { onConflict: 'id' }).select().single();
       perfil = upserted || fix;
     }
