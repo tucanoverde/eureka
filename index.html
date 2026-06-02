@@ -1247,7 +1247,18 @@ function calcTempoRefEtapa(municipios, cfg) {
 
 // Receita bruta de um município (alunos × ticket)
 // Inclui EI somente se o ticket EI estiver configurado (> 0)
+// Se m.cotacao > 0, sobrescreve o cálculo automático com o valor manual (override)
 function calcReceita(m, cfg) {
+  cfg = cfg || getCfg();
+  // Cotação manual tem prioridade sobre alunos × ticket
+  if (m && m.cotacao != null && Number(m.cotacao) > 0) return Number(m.cotacao);
+  return (m.ef1_alunos||0) * cfg.ef1
+       + (m.ef2_alunos||0) * cfg.ef2
+       + (m.ei_alunos||0)  * (cfg.ei||0);
+}
+
+// Receita automática (sem aplicar cotação manual) — útil pra tooltip
+function calcReceitaAutomatica(m, cfg) {
   cfg = cfg || getCfg();
   return (m.ef1_alunos||0) * cfg.ef1
        + (m.ef2_alunos||0) * cfg.ef2
@@ -3942,7 +3953,8 @@ async function renderReuniao() {
               <th title="Nome do município. Clique pra abrir a ficha completa.">Município</th>
               <th title="Farol de prioridade: Quente (Q), Morno (M), Frio (F) ou Não Vale (NV). Define o tempo de referência do health.">Farol</th>
               <th class="num" title="Alunos EF = ef1_alunos + ef2_alunos.">Alunos</th>
-              <th class="num" title="Receita Ajustada = (ef1×ticket_EF1 + ef2×ticket_EF2${cfg.ei>0?' + ei×ticket_EI':''}) × peso_etapa do município.">Receita Aj.</th>
+              <th class="num" title="Cotação manual em R$. Se preenchida (>0), SUBSTITUI o cálculo automático (ef1×ticket+ef2×ticket+ei×ticket) em TODAS as telas (Dashboard, Health, Tracking, Indicadores). Deixe vazia pra usar o cálculo automático.">Cotação</th>
+              <th class="num" title="Receita Ajustada = receita × peso_etapa do município. Receita = cotação manual se preenchida, senão (ef1×ticket_EF1 + ef2×ticket_EF2${cfg.ei>0?' + ei×ticket_EI':''}).">Receita Aj.</th>
               <th title="Etapa atual no funil (SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win).">Status</th>
               <th class="num" title="Dias na etapa atual = hoje - data de entrada na etapa (campo data_status).">Dias</th>
               <th title="Health: compara os dias na etapa com a referência DA ETAPA (média dos municípios na mesma etapa, ou prazo fixo de Configurações se houver <2). 🟢 dentro do prazo · 🟡 até 30% acima · 🔴 acima disso.">Health</th>
@@ -3969,7 +3981,14 @@ async function renderReuniao() {
                   <td style="font-weight:600;cursor:pointer;" onclick="openDrawer('${m.id}')" title="Clique para abrir a ficha completa de ${escapeHtml(m.municipio)}.">${escapeHtml(m.municipio)}</td>
                   <td title="Farol ${m.farol==='Q'?'Quente (Q)':m.farol==='M'?'Morno (M)':m.farol==='F'?'Frio (F)':m.farol==='NV'?'Não Vale (NV)':'não classificado'}. Define o tempo de referência usado no Health.">${m.farol ? `<span class="pill farol-${m.farol}">${m.farol}</span>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
                   <td class="num" title="Alunos = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}.">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
-                  <td class="num" style="font-weight:600;" title="Receita Ajustada = (ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''}) × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.receita)} × ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}% = ${fmtMoney(m.recAdj)}.">${fmtMoney(m.recAdj)}</td>
+                  <td class="num" style="padding:2px 4px;">
+                    <input type="number" step="any" min="0" placeholder="—"
+                      value="${m.cotacao>0 ? m.cotacao : ''}"
+                      style="width:100px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:${m.cotacao>0?'var(--accent-soft)':'var(--bg)'};text-align:right;color:${m.cotacao>0?'var(--accent)':'var(--ink)'};font-weight:${m.cotacao>0?'600':'400'};"
+                      title="Cotação manual em R$. Cálculo automático seria ${fmtMoney(calcReceitaAutomatica(m, cfg))}. Se preenchida (>0), substitui em TODAS as telas."
+                      onchange="salvarCampoRapido('${m.id}','cotacao', this.value ? parseFloat(this.value) : null); setTimeout(() => renderReuniao(), 600)">
+                  </td>
+                  <td class="num" style="font-weight:600;" title="${m.cotacao>0 ? `Cotação MANUAL = ${fmtMoney(m.cotacao)} (substitui o cálculo automático). ` : `Receita = ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''} = ${fmtMoney(m.receita)}. `}Receita Ajustada = ${fmtMoney(m.receita)} × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.recAdj)}.">${fmtMoney(m.recAdj)}${m.cotacao>0?' 💰':''}</td>
                   <td title="Status ${m.status==='Licitacao'?'Licitação':m.status}. Peso de conversão: ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%."><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
                   <td class="num" title="${m.tempoEtapa} dias na etapa ${m.status} = hoje − data_${m.status.toLowerCase()}. Tempo médio do farol ${m.farol||'—'}: ${tRefF.toFixed(0)}d.">${m.tempoEtapa}d</td>
                   <td style="text-align:center;font-size:1rem;" title="Health: ${m.health==='🟢'?'verde — dentro do tempo médio do farol':m.health==='🟡'?'amarelo — até 30-50% acima do tempo médio':m.health==='🔴'?'vermelho — atrasado, ultrapassou o limiar do farol':'sem farol, sem cálculo'}. Limiares: Quente 1.5x · Morno 1.3x · Frio 1.2x do tempo médio do próprio farol (${tRefF.toFixed(0)}d).">${m.health}</td>
