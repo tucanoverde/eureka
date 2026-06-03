@@ -1810,8 +1810,9 @@ function renderDashboard() {
   });
   const maxStage = Math.max(...stageData.map(s => s.count), 1);
 
-  // Distribuição por farol (municípios com farol)
-  const comFarol = todos.filter(m => m.farol);
+  // Distribuição por farol — só municípios em ETAPAS_ATIVAS (pipeline real)
+  // Assim o card reflete corretamente quando um município muda de status
+  const comFarol = todos.filter(m => m.farol && ETAPAS_ATIVAS.includes(m.status));
   const porFarol = {};
   ['Q','M','Mo','F'].forEach(f => {
     const muns = comFarol.filter(m => m.farol === f);
@@ -1900,10 +1901,10 @@ function renderDashboard() {
           <div class="kpi-value">${fmtNum(ativos.length)}</div>
           <div class="kpi-meta">${todos.length.toLocaleString('pt-BR')} na base total</div>
         </div>
-        <div class="kpi" title="Soma da receita bruta de todos os municípios no pipeline. Fórmula por município: ef1_alunos × R$ ${cfg.ef1} + ef2_alunos × R$ ${cfg.ef2}. Não aplica peso de etapa.">
+        <div class="kpi" title="Soma da receita bruta de todos os municípios no pipeline. Fórmula por município: ef1_alunos × R$ ${cfg.ef1} + ef2_alunos × R$ ${cfg.ef2} (ou cotação manual quando definida). Não aplica peso de etapa. Abaixo mostra o total de alunos somados no pipeline.">
           <div class="kpi-label">Receita potencial (pipeline)</div>
           <div class="kpi-value"><span class="currency">R$</span>${fmtNum(receitaPipeline/1e6,1)}<span class="suffix">M</span></div>
-          <div class="kpi-meta">TAM total: ${fmtMoney(tamTotal)}</div>
+          <div class="kpi-meta">${fmtNum(alunosPipeline)} alunos no pipeline</div>
         </div>
         <div class="kpi" title="Forecast ajustado = SOMA(receita × peso_etapa) dos municípios no pipeline. Pesos (configuráveis): Prioritária 15% · SQL 25% · R1 30% · R2 40% · R3 50% · Licitação 85% · Empenho 90% · Entrega 95% · Win 100%. Mesmo número que aparece em Health, Pipeline Tracking, Reunião Semanal e Indicadores.">
           <div class="kpi-label">Forecast</div>
