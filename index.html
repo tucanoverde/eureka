@@ -1826,6 +1826,9 @@ function renderDashboard() {
   });
 
   // Tabela por região
+  // SOM e Receita Estimada agora consideram municípios EM PIPELINE (ETAPAS_ATIVAS),
+  // não mais apenas os que têm farol classificado. Isso casa com "potencial"
+  // — todo aluno em pipeline conta, independente de farol.
   const regioes = {};
   todos.forEach(m => {
     const r = m.regiao_administrativa || 'Sem região';
@@ -1834,7 +1837,7 @@ function renderDashboard() {
     regioes[r].tam_ef1 += m.ef1_alunos||0;
     regioes[r].tam_ef2 += m.ef2_alunos||0;
     regioes[r].tam += (m.ef1_alunos||0)+(m.ef2_alunos||0);
-    if (m.farol) {
+    if (ETAPAS_ATIVAS.includes(m.status)) {
       regioes[r].som_ef1 += m.ef1_alunos||0;
       regioes[r].som_ef2 += m.ef2_alunos||0;
       regioes[r].rec += m.rec;
@@ -1862,7 +1865,8 @@ function renderDashboard() {
     d.score_medio = d.scores.length ? d.scores.reduce((a,b)=>a+b,0)/d.scores.length : 0;
   });
 
-  // Top indicadores — só mostra quem tem comissão configurada (esconde "a preencher")
+  // Top indicadores — mostra valor POTENCIAL bruto (receita total dos municípios
+  // do responsável), igual ao card "Por Farol". Não usa comissão.
   const indMap = {};
   for (const m of ativos) {
     if (!m.indicacao) continue;
@@ -1874,9 +1878,9 @@ function renderDashboard() {
     indMap[m.indicacao].count++;
   }
   const topIndicadores = Object.entries(indMap)
-    .filter(([_, d]) => d.pct > 0 && d.receita > 0)
-    .sort((a,b)=>b[1].receita*b[1].pct - a[1].receita*a[1].pct)
-    .slice(0,5);
+    .filter(([_, d]) => d.receita > 0)
+    .sort((a,b) => b[1].receita - a[1].receita)
+    .slice(0, 5);
 
   // Top 10 ENRIQUECIDO — mesmo critério (receita potencial dentro de ETAPAS_ATIVAS),
   // mas exibe o Score educacional logo abaixo do nome do município para contexto.
@@ -1971,15 +1975,15 @@ function renderDashboard() {
 
           <!-- Top Responsáveis -->
           ${topIndicadores.length > 0 ? `
-          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 5 responsáveis ordenados por comissão estimada = SOMA(receita bruta) dos municípios deste responsável × % comissão configurada. Aparecem só responsáveis com % > 0.">
+          <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 5 responsáveis ordenados por receita potencial bruta = SOMA(receita) dos municípios em pipeline deste responsável. Mesmo cálculo do card 'Por Farol'.">
             <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;">Top Responsáveis</h2>
             ${topIndicadores.map(([cod,d])=>`
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--line);font-size:.82rem;" title="${escapeHtml(d.nome)}: ${d.count} municípios · Receita bruta total ${fmtMoney(d.receita)} × ${(d.pct*100).toFixed(1)}% comissão = ${fmtMoney(d.receita*(d.pct||0))}">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--line);font-size:.82rem;" title="${escapeHtml(d.nome)}: ${d.count} municípios em pipeline · Receita potencial bruta total = ${fmtMoney(d.receita)}${d.pct>0?` · % comissão configurada: ${(d.pct*100).toFixed(1)}% (comissão estimada: ${fmtMoney(d.receita*d.pct)})`:''}">
                 <div>
                   <div style="font-weight:600;">${escapeHtml(d.nome)}</div>
                   <div style="color:var(--ink-dim);font-size:.75rem;">${d.count} municípios</div>
                 </div>
-                <div style="font-weight:700;color:var(--accent);font-size:.85rem;">${fmtMoney(d.receita*(d.pct||0))}</div>
+                <div style="font-weight:700;color:var(--accent);font-size:.85rem;">${fmtMoney(d.receita)}</div>
               </div>
             `).join('')}
           </div>` : ''}
