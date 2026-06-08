@@ -1422,6 +1422,9 @@ function fmtDate(v) {
   if (!v) return '—';
   return new Date(v).toLocaleDateString('pt-BR');
 }
+// Retorna o score normalizado (spread 0-10) se disponível, senão o score bruto do DB
+function getScore(m) { return (m && m._scoreNorm != null) ? m._scoreNorm : (m ? m.indicador_performance_ef : null); }
+
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
@@ -1615,6 +1618,22 @@ async function loadCoreData() {
       sb.from('pipeline_tracking').select('*').order('semana'),
     ]);
     state.municipios = allMunicipios;
+
+    // Normalização min-max do score para maior spread (0-10) entre municípios
+    (function normalizarScores(muns) {
+      const comScore = muns.filter(m => m.indicador_performance_ef != null);
+      if (comScore.length < 2) return;
+      const vals = comScore.map(m => parseFloat(m.indicador_performance_ef));
+      const mn = Math.min(...vals), mx = Math.max(...vals), range = mx - mn;
+      muns.forEach(m => {
+        if (m.indicador_performance_ef != null && range > 0) {
+          m._scoreNorm = parseFloat(((parseFloat(m.indicador_performance_ef) - mn) / range * 10).toFixed(2));
+        } else {
+          m._scoreNorm = m.indicador_performance_ef;
+        }
+      });
+    })(allMunicipios);
+
     state.indicadores = ind.data || [];
     state.configuracoes = {};
     (cfg.data || []).forEach(c => { state.configuracoes[c.chave] = c.valor; });
@@ -1909,8 +1928,8 @@ function renderDashboard() {
   // Top 10 POR SCORE — ranking por indicador_performance_ef (decrescente).
   // Mantém o valor de receita potencial à direita para contexto.
   const top10Enriched = todos
-    .filter(m => ETAPAS_ATIVAS.includes(m.status) && m.indicador_performance_ef != null)
-    .sort((a,b) => (b.indicador_performance_ef||0) - (a.indicador_performance_ef||0))
+    .filter(m => ETAPAS_ATIVAS.includes(m.status) && getScore(m) != null)
+    .sort((a,b) => (getScore(b)||0) - (getScore(a)||0))
     .slice(0, 10);
 
   document.getElementById('pageContent').innerHTML = `
@@ -2085,7 +2104,7 @@ function renderDashboard() {
             ${top10Enriched.length === 0
               ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município em pipeline.</div>`
               : top10Enriched.map((m,i)=>{
-                const sc = m.indicador_performance_ef;
+                const sc = getScore(m);
                 const scCor = sc == null ? 'var(--ink-faint)' : sc >= 7 ? 'var(--accent)' : sc >= 5 ? 'var(--warn)' : 'var(--danger)';
                 return `
                 <div style="display:flex;align-items:center;gap:.75rem;padding:.45rem 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="openMunicipio('${m.id}')" title="${escapeHtml(m.municipio)} (${m.uf}) · status ${m.status} · Receita = ef1×${cfg.ef1} + ef2×${cfg.ef2}${cfg.ei>0?' + ei×'+cfg.ei:''} = ${fmtMoney(m.rec)} · Score educacional: ${sc != null ? fmtNum(sc,2) : 'não preenchido'}">
@@ -2209,7 +2228,7 @@ async function renderMapaBrasil(ufData, todos) {
 
   // Marcadores via Canvas (círculos leves)
   municipios.forEach(m => {
-    const score = m.indicador_performance_ef;
+    const score = getScore(m);
     const color = scoreColor(score);
     const circle = L.circleMarker([m.latitude, m.longitude], {
       radius: filtroUF ? 5 : 3,
@@ -2588,10 +2607,10 @@ function renderTable() {
             <td title="Região administrativa estadual">${escapeHtml(m.regiao_administrativa || '—')}</td>
             <td class="num" title="Alunos EF Total = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}. Fonte: INEP Censo Escolar.">${fmtNum(m.total_ef)}</td>
             <td class="num" title="Receita Potencial = ef1 × R$${cfgR.ef1} (${fmtMoney((m.ef1_alunos||0)*cfgR.ef1)}) + ef2 × R$${cfgR.ef2} (${fmtMoney((m.ef2_alunos||0)*cfgR.ef2)})${cfgR.ei>0?` + ei × R$${cfgR.ei} (${fmtMoney((m.ei_alunos||0)*cfgR.ei)})`:''}${multUsado?` × ${multValor.toFixed(2)} (multiplicador do filtro)`:''} = ${fmtMoney(m.receita_potencial)}. Não aplica peso de etapa.">${fmtMoney(m.receita_potencial)}</td>
-            <td class="num" title="${m.indicador_performance_ef != null ? `Score Educacional = ${fmtNum(m.indicador_performance_ef, 2)} (escala 0-10). Composto: IDEB×${(wIdeb*100).toFixed(0)}% + SAEB×${(wSaeb*100).toFixed(0)}% + (1−Evasão)×${(wEva*100).toFixed(0)}%. Dados do município: IDEB EF1 ${m.ideb_ef1?fmtNum(m.ideb_ef1,1):'—'}, SAEB EF1 ${m.saeb_ef1?fmtNum(m.saeb_ef1,1):'—'}, Aprovação ${m.aprovacao_ef?fmtNum(m.aprovacao_ef,1)+'%':'—'}. Pesos configuráveis em Configurações.` : 'Score Educacional ainda não calculado para este município.'}">
-              ${m.indicador_performance_ef != null ? `
-                <span class="score-bar"><span class="score-bar-fill" style="transform: scaleX(${Math.min(m.indicador_performance_ef, 10) / 10})"></span></span>
-                ${fmtNum(m.indicador_performance_ef, 2)}
+            <td class="num" title="${getScore(m) != null ? `Score Educacional = ${fmtNum(getScore(m), 2)} (escala 0-10, normalizado). Original DB: ${fmtNum(m.indicador_performance_ef,2)}. Composto: IDEB×${(wIdeb*100).toFixed(0)}% + SAEB×${(wSaeb*100).toFixed(0)}% + (1−Evasão)×${(wEva*100).toFixed(0)}%. Dados: IDEB EF1 ${m.ideb_ef1?fmtNum(m.ideb_ef1,1):'—'}, SAEB EF1 ${m.saeb_ef1?fmtNum(m.saeb_ef1,1):'—'}, Aprovação ${m.aprovacao_ef?fmtNum(m.aprovacao_ef,1)+'%':'—'}.` : 'Score Educacional ainda não calculado para este município.'}">
+              ${getScore(m) != null ? `
+                <span class="score-bar"><span class="score-bar-fill" style="transform: scaleX(${Math.min(getScore(m), 10) / 10})"></span></span>
+                ${fmtNum(getScore(m), 2)}
               ` : '—'}
             </td>
             <td class="num" title="${m.idhm != null ? `IDHM = ${fmtNum(m.idhm, 3)} (PNUD 2010). Combina renda + educação + longevidade. Escala 0-1. Faixas: ≥0.8 Muito Alto, 0.7-0.8 Alto, 0.6-0.7 Médio, <0.6 Baixo.` : 'IDHM não importado para este município.'}">${m.idhm != null ? fmtNum(m.idhm, 3) : '—'}</td>
@@ -3015,7 +3034,7 @@ function renderDrawerPublico(m) {
   };
 
   const idhm_info = idhm_class(m.idhm);
-  const score_info = score_class(m.indicador_performance_ef);
+  const score_info = score_class(getScore(m));
 
   const card = (icon, label, value, sub='', color='var(--ink)') => `
     <div style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.85rem;display:flex;align-items:center;gap:.75rem;">
@@ -3050,10 +3069,10 @@ function renderDrawerPublico(m) {
       <div style="background:var(--bg-elev);border:2px solid ${score_info.cor};border-radius:6px;padding:1rem;text-align:center;" title="Score Educacional (indicador_performance_ef): índice composto que combina IDEB, SAEB e taxas de evasão. Pesos configuráveis em Configurações > Pesos do indicador de performance. Escala 0-10. Faixas: ≥8 Excelente · 7-8 Bom · 6-7 Regular · 5-6 Abaixo · <5 Crítico.">
         <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Score Educacional</div>
         <div style="font-size:2rem;font-weight:700;color:${score_info.cor};font-family:Fraunces,serif;">
-          ${m.indicador_performance_ef ? fmtNum(m.indicador_performance_ef,2) : '—'}
+          ${getScore(m) != null ? fmtNum(getScore(m),2) : '—'}
         </div>
         <div style="font-size:.75rem;color:${score_info.cor};font-weight:600;">${score_info.label}</div>
-        ${m.indicador_performance_ef ? bar(m.indicador_performance_ef, 10, score_info.cor) : ''}
+        ${getScore(m) != null ? bar(getScore(m), 10, score_info.cor) : ''}
       </div>
       <div style="background:var(--bg-elev);border:2px solid ${idhm_info.cor};border-radius:6px;padding:1rem;text-align:center;" title="IDHM (Índice de Desenvolvimento Humano Municipal) calculado pela ONU/PNUD. Combina renda, educação e longevidade. Escala 0-1. Faixas oficiais: ≥0.8 Muito Alto · 0.7-0.8 Alto · 0.6-0.7 Médio · <0.6 Baixo. Fonte: Atlas Brasil PNUD/2010.">
         <div style="font-size:.7rem;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">IDHM 2010</div>
@@ -5187,7 +5206,7 @@ function renderPrefeituras() {
         <td class="num">${m.pctFundeb > 0 ? (m.pctFundeb*100).toFixed(1)+'%' : '—'}</td>
         <td class="num">${m.custoAluno > 0 ? fmtMoney(m.custoAluno) : '—'}</td>
         <td class="num">${m.idhm ? fmtNum(m.idhm,3) : '—'}</td>
-        <td class="num">${m.indicador_performance_ef ? fmtNum(m.indicador_performance_ef,2) : '—'}</td>
+        <td class="num">${getScore(m) != null ? fmtNum(getScore(m),2) : '—'}</td>
       </tr>`;
   });
 
@@ -5289,7 +5308,7 @@ async function renderIndicadores() {
       <!-- KPIs do forecast -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;">
         <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;" title="Forecast = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS. Equivale à célula Health!A24 da planilha. Mesmo valor que aparece em Dashboard, Health, Tracking e Reunião Semanal.">
-          <div style="font-size:.72rem;opacity:.8;">Forecast (Health!A24)</div>
+          <div style="font-size:.72rem;opacity:.8;">Forecast</div>
           <div style="font-size:1.2rem;font-weight:700;">${fmtMoney(forecastTotal)}</div>
           <div style="font-size:.7rem;opacity:.7;">= SUM(receita × peso_etapa)</div>
         </div>
