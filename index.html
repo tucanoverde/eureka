@@ -1165,6 +1165,8 @@ function toDisplayPct(v, def) {
 // Etapas do pipeline na ordem correta (planilha)
 const ETAPAS_PIPELINE = ['Prioritaria','SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
 const ETAPAS_ATIVAS   = ['Prioritaria','SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
+// Forecast considera apenas SQL→Win (Prioritária é pré-engajamento e não entra no forecast)
+const ETAPAS_FORECAST = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
 
 // Pesos padrão por etapa (Health!A17) — sobrescritos por Configurações
 const PESOS_ETAPA_DEFAULT = { Prioritaria:0.15, SQL:0.25, R1:0.30, R2:0.40, R3:0.50, Licitacao:0.85, Empenho:0.90, Entrega:0.95, Win:1.0 };
@@ -1245,24 +1247,28 @@ function calcTempoRefEtapa(municipios, cfg) {
   return ref;
 }
 
+// Alunos efetivos (real > fonte). Se ef1_alunos_real != null, usa esse valor
+// (incluindo 0 quando a prefeitura não responde pela série); senão usa ef1_alunos.
+function getEF1(m) { return (m.ef1_alunos_real != null) ? Number(m.ef1_alunos_real) : (Number(m.ef1_alunos)||0); }
+function getEF2(m) { return (m.ef2_alunos_real != null) ? Number(m.ef2_alunos_real) : (Number(m.ef2_alunos)||0); }
+function getEI(m)  { return Number(m.ei_alunos)||0; }
+
 // Receita bruta de um município (alunos × ticket)
-// Inclui EI somente se o ticket EI estiver configurado (> 0)
 // Se m.cotacao > 0, sobrescreve o cálculo automático com o valor manual (override)
 function calcReceita(m, cfg) {
   cfg = cfg || getCfg();
-  // Cotação manual tem prioridade sobre alunos × ticket
   if (m && m.cotacao != null && Number(m.cotacao) > 0) return Number(m.cotacao);
-  return (m.ef1_alunos||0) * cfg.ef1
-       + (m.ef2_alunos||0) * cfg.ef2
-       + (m.ei_alunos||0)  * (cfg.ei||0);
+  return getEF1(m) * cfg.ef1
+       + getEF2(m) * cfg.ef2
+       + getEI(m)  * (cfg.ei||0);
 }
 
 // Receita automática (sem aplicar cotação manual) — útil pra tooltip
 function calcReceitaAutomatica(m, cfg) {
   cfg = cfg || getCfg();
-  return (m.ef1_alunos||0) * cfg.ef1
-       + (m.ef2_alunos||0) * cfg.ef2
-       + (m.ei_alunos||0)  * (cfg.ei||0);
+  return getEF1(m) * cfg.ef1
+       + getEF2(m) * cfg.ef2
+       + getEI(m)  * (cfg.ei||0);
 }
 
 // Peso de etapa para um município
@@ -1282,11 +1288,11 @@ function calcReceitaAjustada(m, cfg) {
   return calcReceita(m, cfg) * getPesoEtapa(m.status, cfg);
 }
 
-// Forecast total (= Health!A24 = SUM(K27:K503))
+// Forecast total — considera APENAS SQL→Win (exclui Prioritária pré-engajamento)
 function calcForecastAjustado(municipios, cfg) {
   cfg = cfg || getCfg();
   return municipios
-    .filter(m => ETAPAS_ATIVAS.includes(m.status))
+    .filter(m => ETAPAS_FORECAST.includes(m.status))
     .reduce((s, m) => s + calcReceitaAjustada(m, cfg), 0);
 }
 
@@ -1390,6 +1396,24 @@ function fmtNum(v, decimals = 0) {
   if (v == null || v === '') return '—';
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(v);
 }
+// Helpers globais para formatação de moeda BRL em inputs editáveis
+function formatCurrencyBR(n) {
+  if (n == null || n === '' || isNaN(Number(n))) return '';
+  return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}).format(Number(n));
+}
+function parseCurrencyBR(s) {
+  if (s == null) return null;
+  const str = String(s).trim();
+  if (!str) return null;
+  // Remove tudo que não é dígito, vírgula ou ponto. Vírgula vira ponto decimal.
+  // Pontos de milhar (no formato BR) são removidos.
+  let cleaned = str.replace(/[^\d,.-]/g, '');
+  // Se tem vírgula, assume formato BR (1.234,56) — remove pontos e troca vírgula por ponto
+  if (cleaned.includes(',')) cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
 function fmtPct(v, decimals = 1) {
   if (v == null || v === '') return '—';
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(v) + '%';
@@ -1882,11 +1906,11 @@ function renderDashboard() {
     .sort((a,b) => b[1].receita - a[1].receita)
     .slice(0, 5);
 
-  // Top 10 ENRIQUECIDO — mesmo critério (receita potencial dentro de ETAPAS_ATIVAS),
-  // mas exibe o Score educacional logo abaixo do nome do município para contexto.
+  // Top 10 POR SCORE — ranking por indicador_performance_ef (decrescente).
+  // Mantém o valor de receita potencial à direita para contexto.
   const top10Enriched = todos
-    .filter(m => ETAPAS_ATIVAS.includes(m.status))
-    .sort((a,b) => b.rec - a.rec)
+    .filter(m => ETAPAS_ATIVAS.includes(m.status) && m.indicador_performance_ef != null)
+    .sort((a,b) => (b.indicador_performance_ef||0) - (a.indicador_performance_ef||0))
     .slice(0, 10);
 
   document.getElementById('pageContent').innerHTML = `
@@ -2055,8 +2079,8 @@ function renderDashboard() {
             `).join('')}
           </div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios em pipeline (Prioritária, SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win) ordenados por Receita Potencial decrescente. Mesma lista do card ao lado, mas com o Score Educacional exibido abaixo do nome para contexto.">
-          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-enriched-titulo">💰 Top 10 · Receita Potencial (com Score)</h2>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Top 10 municípios em pipeline ordenados por SCORE Educacional decrescente. Mostra a receita potencial à direita pra contexto. Só aparecem municípios com score preenchido.">
+          <h2 style="font-size:1rem;font-weight:600;margin-bottom:1rem;" id="top10-enriched-titulo">🎓 Top 10 · Score Educacional</h2>
           <div id="top10-enriched-lista">
             ${top10Enriched.length === 0
               ? `<div style="color:var(--ink-faint);font-size:.82rem;padding:1rem 0;">Nenhum município em pipeline.</div>`
@@ -2738,17 +2762,33 @@ function renderDrawerComercial(m) {
     <div class="section-title">Responsável Comercial</div>
 
     ${indSelecionado ? `
-    <div style="background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px; padding:1rem; margin-bottom:1rem; display:flex; align-items:center; gap:1rem;" title="Comissão estimada deste município = Receita Potencial bruta (${fmtMoney(receita)}) × % comissão do responsável (${indSelecionado.percentual_comissao ? (indSelecionado.percentual_comissao*100).toFixed(1)+'%' : '0%'}) = ${fmtMoney(comissaoEst)}. Não considera peso de etapa nem impostos — é uma estimativa simples sobre receita total.">
-      <div style="width:44px; height:44px; border-radius:50%; background:${avatarColor(indSelecionado.nome)}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1rem; flex-shrink:0;">
-        ${avatarLetras(indSelecionado.nome)}
+    <div style="background:var(--accent-soft); border:1px solid var(--accent); border-radius:6px; padding:1rem; margin-bottom:1rem;" title="Edições nesta caixa afetam TODOS os municípios que têm '${escapeHtml(indSelecionado.codigo)}' como responsável.">
+      <div style="display:flex; align-items:center; gap:1rem; margin-bottom:.75rem;">
+        <div style="width:44px; height:44px; border-radius:50%; background:${avatarColor(indSelecionado.nome)}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1rem; flex-shrink:0;">
+          ${avatarLetras(indSelecionado.nome)}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:.7rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em;">Código: ${escapeHtml(indSelecionado.codigo)}</div>
+          <div style="font-size:.95rem; font-weight:700;">${escapeHtml(indSelecionado.nome)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:.72rem; color:var(--ink-dim);">Est. comissão</div>
+          <div style="font-weight:700; color:var(--accent); font-size:1rem;">${fmtMoney(comissaoEst)}</div>
+        </div>
       </div>
-      <div style="flex:1;">
-        <div style="font-weight:700; font-size:.95rem;">${escapeHtml(indSelecionado.nome)}</div>
-        <div style="font-size:.8rem; color:var(--ink-dim);">Comissão: ${indSelecionado.percentual_comissao ? (indSelecionado.percentual_comissao*100).toFixed(1)+'%' : '—'}</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:.72rem; color:var(--ink-dim);">Est. comissão</div>
-        <div style="font-weight:700; color:var(--accent); font-size:1rem;">${fmtMoney(comissaoEst)}</div>
+      <div class="form-grid" style="grid-template-columns:2fr 1fr;gap:.6rem;">
+        <div class="field" style="margin:0;">
+          <label style="font-size:.65rem;">Nome do responsável <span style="opacity:.5;font-weight:400;">(edita em todos os municípios deste responsável)</span></label>
+          <input type="text" value="${escapeHtml(indSelecionado.nome)}" data-edit-ind-nome="${indSelecionado.id}"
+            onchange="editarIndicadorInline('${indSelecionado.id}','nome',this.value)"
+            style="padding:.4rem .6rem;border:1px solid var(--line-strong);border-radius:3px;background:#fff;width:100%;">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:.65rem;">% Comissão</label>
+          <input type="number" step="0.01" min="0" max="100" value="${(indSelecionado.percentual_comissao*100).toFixed(2)}" data-edit-ind-pct="${indSelecionado.id}"
+            onchange="editarIndicadorInline('${indSelecionado.id}','percentual_comissao', parseFloat(this.value)/100)"
+            style="padding:.4rem .6rem;border:1px solid var(--line-strong);border-radius:3px;background:#fff;width:100%;">
+        </div>
       </div>
     </div>
     ` : ''}
@@ -2763,6 +2803,25 @@ function renderDrawerComercial(m) {
           <option value="">— Sem responsável</option>
           ${indicadoresOptions}
         </select>
+      </div>
+    </div>
+
+    <div class="section-title">Alunos coletados em reunião <span style="font-size:.72rem;font-weight:400;color:var(--ink-dim);text-transform:none;letter-spacing:0;">(opcional — sobrescreve a fonte oficial)</span></div>
+    <div class="message" style="font-size:.75rem;">
+      Preencha apenas quando tiver dados reais coletados em reunião com a prefeitura.
+      Aceita <strong>0</strong> quando a série não é responsabilidade do município.
+      Em branco = usa o valor da fonte oficial (INEP/Censo) abaixo.
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>EF1 Real (alunos)</label>
+        <input data-field="ef1_alunos_real" type="number" min="0" step="1" value="${m.ef1_alunos_real != null ? m.ef1_alunos_real : ''}" placeholder="—">
+        <div style="font-size:.7rem;color:var(--ink-dim);margin-top:.25rem;">Fonte (INEP): ${fmtNum(m.ef1_alunos||0)}</div>
+      </div>
+      <div class="field">
+        <label>EF2 Real (alunos)</label>
+        <input data-field="ef2_alunos_real" type="number" min="0" step="1" value="${m.ef2_alunos_real != null ? m.ef2_alunos_real : ''}" placeholder="—">
+        <div style="font-size:.7rem;color:var(--ink-dim);margin-top:.25rem;">Fonte (INEP): ${fmtNum(m.ef2_alunos||0)}</div>
       </div>
     </div>
 
@@ -3219,7 +3278,7 @@ const salvarCampo = debounce(async (field, value) => {
   // Converte valor
   let v = value;
   if (v === '') v = null;
-  else if (['ef1_alunos','ef2_alunos','ei_alunos','populacao_2022'].includes(field)) v = parseInt(v);
+  else if (['ef1_alunos','ef2_alunos','ei_alunos','ef1_alunos_real','ef2_alunos_real','populacao_2022'].includes(field)) v = parseInt(v);
   else if (['educacao_total_liquidado','fundeb_distribuido','idhm','ideb_ef1','ideb_ef2','saeb_ef1','saeb_ef2','aprovacao_ef','abandono_ef'].includes(field)) v = parseFloat(v);
 
   const updates = { [field]: v, atualizado_por: state.user.id };
@@ -3328,19 +3387,20 @@ function renderHealth() {
   const tmFarol = calcTempoMedioFarol(state.municipios);
   const cenGlobal = calcCenarios(forecastAjustado, cfg);
 
-  const recFarol = (f) => ativos.filter(m => m.farol === f).reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
-  const recQ = recFarol('Q'), recM = recFarol('M'), recF = recFarol('F');
-  // "Sem farol" = ativos sem classificação de farol (entra no global mas não em Q/M/F)
-  const recSem = ativos.filter(m => !m.farol || (m.farol !== 'Q' && m.farol !== 'M' && m.farol !== 'F'))
-                      .reduce((s,m) => s + calcReceitaAjustada(m, cfg), 0);
+  // Cenário Potencial por Farol = receita_bruta × peso_farol (não peso de etapa).
+  // "Sem Farol — Potencial" = receita bruta sem peso (potencial puro, NÃO entra no forecast).
+  const pesoFarol = { Q: cfg.f_q, M: cfg.f_m, F: cfg.f_f, SEM: 1 };
+  const munsFarol = (f) => f === 'SEM'
+    ? ativos.filter(m => !m.farol || !['Q','M','F'].includes(m.farol))
+    : ativos.filter(m => m.farol === f);
+  const recFarol = (f) => munsFarol(f).reduce((s,m) => s + calcReceita(m, cfg) * pesoFarol[f], 0);
+  const recQ = recFarol('Q'), recM = recFarol('M'), recF = recFarol('F'), recSem = recFarol('SEM');
 
   const infoFarol = (f) => {
-    const muns = f === 'SEM'
-      ? ativos.filter(m => !m.farol || (m.farol !== 'Q' && m.farol !== 'M' && m.farol !== 'F'))
-      : ativos.filter(m => m.farol === f);
+    const muns = munsFarol(f);
     return {
       count: muns.length,
-      alunos: muns.reduce((s,m) => s+(m.ef1_alunos||0)+(m.ef2_alunos||0), 0),
+      alunos: muns.reduce((s,m) => s + getEF1(m) + getEF2(m), 0),
       tempoMedio: f === 'SEM' ? 0 : (tmFarol[f] || 0)
     };
   };
@@ -3379,31 +3439,35 @@ function renderHealth() {
       </div>`;
   });
 
-  // Gerar HTML dos cenários por farol — inclui "Sem farol" pra somar ao global
-  const farolLabel = { Q:'Quente', M:'Morno', F:'Frio', SEM:'Sem farol' };
+  // Gerar HTML dos cenários por farol — Sem Farol é POTENCIAL (não entra no forecast)
+  const farolLabel = { Q:'Quente', M:'Morno', F:'Frio', SEM:'Sem Farol — Potencial' };
   const farolCor   = { Q:'var(--danger)', M:'var(--warn)', F:'var(--blue)', SEM:'var(--ink-dim)' };
   let htmlFarol = '';
   const farois = recSem > 0 ? ['Q','M','F','SEM'] : ['Q','M','F'];
   farois.forEach(f => {
     const info = infoFarol(f);
-    const rec = { Q: recQ, M: recM, F: recF, SEM: recSem }[f];
-    const cens = calcCenarios(rec, cfg);
+    const recBaseFarol = { Q: recQ, M: recM, F: recF, SEM: recSem }[f];  // já vem com peso_farol aplicado (ou 1.0 pra SEM)
+    const pesoFarolUsado = pesoFarol[f];
+    const cens = calcCenarios(recBaseFarol, cfg);
     let htmlCensFarol = '';
     ['agressivo','realista','conservador'].forEach(c => {
       const cn = cens[c];
       const convC = {agressivo:cfg.conv_agr,realista:cfg.conv_real,conservador:cfg.conv_cons}[c];
       htmlCensFarol += `
-        <div style="background:var(--bg);border-radius:4px;padding:.6rem;" title="${c} (${(convC*100).toFixed(0)}% conversão): receita ajustada deste farol ${fmtMoney(rec)} × ${(convC*100).toFixed(0)}% = ${fmtMoney(cn.receita)}. Alunos esperados = ${info.alunos} × ${(convC*100).toFixed(0)}%.">
+        <div style="background:var(--bg);border-radius:4px;padding:.6rem;" title="${c} (${(convC*100).toFixed(0)}% conversão): receita base do farol ${fmtMoney(recBaseFarol)} × ${(convC*100).toFixed(0)}% = ${fmtMoney(cn.receita)}. Alunos esperados = ${info.alunos} × ${(convC*100).toFixed(0)}%.">
           <div style="font-size:.7rem;font-weight:600;color:var(--ink-dim);margin-bottom:.4rem;text-transform:capitalize;">${c}</div>
           <div style="font-size:.85rem;font-weight:700;">${fmtMoney(cn.receita)}</div>
           <div style="font-size:.7rem;color:var(--ink-dim);">${fmtNum(Math.round(info.alunos * convC))} alunos</div>
         </div>`;
     });
+    const explicaCalculo = f === 'SEM'
+      ? `Receita bruta × 100% (sem peso) = ${fmtMoney(recBaseFarol)}. Potencial puro — NÃO faz parte do forecast.`
+      : `Receita bruta dos municípios deste farol × peso do farol (${(pesoFarolUsado*100).toFixed(0)}%) = ${fmtMoney(recBaseFarol)}.`;
     htmlFarol += `
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;" title="Farol ${farolLabel[f]}: ${info.count} municípios ativos com este farol. Receita ajustada total = SOMA(receita × peso_etapa) = ${fmtMoney(rec)}. Tempo médio na etapa atual: ${info.tempoMedio.toFixed(0)} dias.">
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1.25rem;${f==='SEM'?'border-style:dashed;':''}" title="${farolLabel[f]}: ${info.count} municípios. ${explicaCalculo} Tempo médio na etapa: ${info.tempoMedio.toFixed(0)} dias.">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <span style="font-weight:700;font-size:.95rem;color:${farolCor[f]};">${farolLabel[f]}</span>
-          <span style="font-size:.75rem;color:var(--ink-dim);">${info.count} mun · ${fmtNum(info.alunos)} alunos · ${info.tempoMedio.toFixed(0)}d médio</span>
+          <span style="font-size:.75rem;color:var(--ink-dim);">${info.count} mun · ${fmtNum(info.alunos)} alunos${f==='SEM'?'':` · ${info.tempoMedio.toFixed(0)}d médio`}</span>
         </div>
         ${info.count === 0
           ? '<div style="color:var(--ink-faint);font-size:.8rem;text-align:center;padding:1rem;">Sem municípios</div>'
@@ -3412,19 +3476,19 @@ function renderHealth() {
       </div>`;
   });
 
-  // Gerar HTML da tabela por etapa
+  // Gerar HTML da tabela por etapa (coluna PESO removida — já fica claro abaixo)
   let htmlEtapas = '';
   porEtapa.forEach(e => {
     const cenE = calcCenarios(e.fore, cfg);
     const lab = e.etapa === 'Licitacao' ? 'Licitação' : e.etapa;
+    const pesoStr = (getPesoEtapa(e.etapa, cfg)*100).toFixed(2);
     htmlEtapas += `
-      <tr title="${lab}: ${e.count} municípios. Receita bruta = SOMA(ef1×${cfg.ef1} + ef2×${cfg.ef2}). Forecast = receita × ${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%. Fat. Redesa Agressivo = forecast × (1-${(cfg.impostos*100).toFixed(2)}%) × ${(cfg.redesa*100).toFixed(0)}%.">
+      <tr title="${lab}: ${e.count} municípios. Receita Potencial = SOMA(ef1×${cfg.ef1} + ef2×${cfg.ef2}). Forecast = receita × peso ${pesoStr}%. Fat. Redesa Agressivo = Forecast × (1-${(cfg.impostos*100).toFixed(2)}%) × ${(cfg.redesa*100).toFixed(0)}%.">
         <td style="font-weight:700;color:var(--accent);" title="Nome da etapa do funil. Ordem: Prioritária → SQL → R1 → R2 → R3 → Licitação → Empenho → Entrega → Win.">${lab}</td>
-        <td class="num" title="Peso da etapa (probabilidade de conversão). Configurável em Configurações > Pesos de Forecast por Etapa.">${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%</td>
         <td class="num" title="Quantidade de municípios com status = ${lab}.">${e.count}</td>
         <td class="num" title="Receita Potencial (bruta) = SOMA(ef1_alunos × ${cfg.ef1} + ef2_alunos × ${cfg.ef2}${cfg.ei>0?` + ei_alunos × ${cfg.ei}`:''}) dos ${e.count} municípios. SEM aplicar peso de etapa.">${fmtMoney(e.rec)}</td>
-        <td class="num" style="font-weight:600;" title="Forecast Ajustado = Receita Potencial × peso da etapa (${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}%) = ${fmtMoney(e.rec)} × ${(getPesoEtapa(e.etapa, cfg)*100).toFixed(2)}% = ${fmtMoney(e.fore)}.">${fmtMoney(e.fore)}</td>
-        <td class="num" title="Fat. Redesa no cenário Agressivo = Forecast × (1-impostos) × ${(cfg.redesa*100).toFixed(0)}% × 100% conv. = ${fmtMoney(cenE.agressivo.redesa)}.">${fmtMoney(cenE.agressivo.redesa)}</td>
+        <td class="num" style="font-weight:600;" title="Forecast Ajustado = Receita Potencial × peso da etapa (${pesoStr}%) = ${fmtMoney(e.rec)} × ${pesoStr}% = ${fmtMoney(e.fore)}.">${fmtMoney(e.fore)}</td>
+        <td class="num" title="Fat. Redesa Agressivo = Forecast × (1 - impostos ${(cfg.impostos*100).toFixed(2)}%) × ${(cfg.redesa*100).toFixed(0)}% = ${fmtMoney(cenE.agressivo.redesa)}.">${fmtMoney(cenE.agressivo.redesa)}</td>
         <td class="num" title="Tempo médio (em dias) dos municípios desta etapa, contado desde a data de entrada na etapa (data_${e.etapa.toLowerCase()}).">${e.tempoMedio.toFixed(1)}d</td>
       </tr>`;
   });
@@ -3432,7 +3496,7 @@ function renderHealth() {
   const tmGlobal  = (tmFarol.Q + tmFarol.M + tmFarol.F) / 3;
   htmlEtapas += `
     <tr style="background:var(--accent-soft);font-weight:700;">
-      <td>TOTAL</td><td class="num">—</td>
+      <td>TOTAL</td>
       <td class="num">${ativos.length}</td>
       <td class="num">${fmtMoney(totalRec)}</td>
       <td class="num">${fmtMoney(forecastAjustado)}</td>
@@ -3461,8 +3525,8 @@ function renderHealth() {
     <div class="page-body">
 
       <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1.25rem;margin-bottom:1.5rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">
-        <div title="Forecast = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS. Equivalente à célula Health!A24 da planilha original. Mesmo valor em Dashboard/Tracking/Reunião/Indicadores.">
-          <div style="font-size:.75rem;opacity:.8;">Receita Forecast (Health!A24)</div>
+        <div title="Receita Forecast = SOMA(receita × peso_etapa) dos municípios em SQL→Win (Prioritária NÃO entra). Mesmo valor em Dashboard/Tracking/Reunião/Indicadores.">
+          <div style="font-size:.75rem;opacity:.8;">Receita Forecast</div>
           <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAjustado)}</div>
         </div>
         <div title="Receita Líquida = Forecast × (1 - impostos). Impostos = ${(cfg.impostos*100).toFixed(2)}% (configurável).">
@@ -3482,7 +3546,7 @@ function renderHealth() {
 
       <div style="margin-bottom:1.5rem;">
         <h2 style="font-size:1rem;font-weight:600;margin-bottom:.25rem;">Cenários Potencial Total por Farol</h2>
-        <p style="font-size:.75rem;color:var(--ink-dim);margin-bottom:1rem;">Q + M + F${recSem>0?' + Sem farol':''} = Cenários Globais. Total: ${fmtMoney(recQ+recM+recF+recSem)} ${Math.abs((recQ+recM+recF+recSem)-forecastAjustado)<1?'✅':'⚠️ diferença vs forecast: '+fmtMoney(forecastAjustado-(recQ+recM+recF+recSem))}</p>
+        <p style="font-size:.75rem;color:var(--ink-dim);margin-bottom:1rem;">Receita bruta de cada município × peso do farol (Q ${(cfg.f_q*100).toFixed(0)}% · M ${(cfg.f_m*100).toFixed(0)}% · F ${(cfg.f_f*100).toFixed(0)}%). O card <strong>Sem Farol — Potencial</strong> mostra o potencial puro (sem peso) dos municípios não classificados e <strong>não entra no forecast</strong>.</p>
         <div style="display:grid;grid-template-columns:repeat(${farois.length},1fr);gap:1rem;">${htmlFarol}</div>
       </div>
 
@@ -3493,11 +3557,10 @@ function renderHealth() {
             <thead>
               <tr>
                 <th title="Etapa do funil de vendas.">Etapa</th>
-                <th class="num" title="Probabilidade de conversão da etapa (peso). Configurável.">Peso</th>
                 <th class="num" title="Quantidade de municípios nesta etapa.">Municípios</th>
                 <th class="num" title="Receita Potencial = SOMA(ef1×ticket_EF1 + ef2×ticket_EF2 + ei×ticket_EI) dos municípios da etapa. Sem peso.">Receita Potencial</th>
                 <th class="num" title="Forecast Ajustado = Receita × peso_etapa.">Forecast (Ajustado)</th>
-                <th class="num" title="Fat. Redesa Agressivo = Forecast × (1-impostos) × 50%.">Fat. Redesa</th>
+                <th class="num" title="Fat. Redesa Agressivo = Forecast × (1-impostos) × 50% (cenário Agressivo = 100% conversão).">Fat. Redesa</th>
                 <th class="num" title="Tempo médio em dias dos municípios na etapa.">Tempo Médio</th>
               </tr>
             </thead>
@@ -3529,12 +3592,15 @@ async function renderTracking() {
 
   // Calcular estado atual do pipeline
   const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  // Receita Potencial Atual = soma de receita bruta dos ATIVOS (sem peso)
+  const receitaPotencialAtual = ativos.reduce((s,m) => s + calcReceita(m, cfg), 0);
+  // Forecast Atual = SOMA(receita × peso) de SQL→Win (sem Prioritária)
   const forecastAtual = calcForecastAjustado(state.municipios, cfg);
   const tmFarol = calcTempoMedioFarol(state.municipios);
+  const tempoRefEtapa = calcTempoRefEtapa(state.municipios, cfg);
 
-  // Velocity e ticket só consideram SQL→Win (sem Prioritaria — pré-engajamento)
-  const ETAPAS_VENDAS = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
-  const ativosVendas = state.municipios.filter(m => ETAPAS_VENDAS.includes(m.status));
+  // Velocity, ticket e eficiência só consideram SQL→Win (sem Prioritaria — pré-engajamento)
+  const ativosVendas = state.municipios.filter(m => ETAPAS_FORECAST.includes(m.status));
 
   // Eficiência atual = mediana de (receita_ajustada / dias_na_etapa)
   // dias mínimo = 1 para não filtrar municípios que entraram na etapa hoje
@@ -3578,9 +3644,21 @@ async function renderTracking() {
     .map(e => ({ etapa: e, score: contEtapa[e] * tempoMedioPorEtapa[e] }))
     .sort((a,b) => b.score - a.score)[0]?.etapa || '—';
 
+  // Velocity ponderada = SOMA(velocity_municipio × receita_ajustada) / SOMA(receita_ajustada)
+  // Usa apenas SQL→Win (mesmo recorte do forecast). Velocity de cada município
+  // já é dias_na_etapa ÷ referência_da_etapa (calcVelocity).
+  let velNumerador = 0, velDenominador = 0;
+  ativosVendas.forEach(m => {
+    const v = calcVelocity(m, tempoRefEtapa);
+    const r = calcReceitaAjustada(m, cfg);
+    if (r > 0) { velNumerador += v * r; velDenominador += r; }
+  });
+  const velocityPonderada = velDenominador > 0 ? parseFloat((velNumerador / velDenominador).toFixed(2)) : 0;
+
   // Dados da semana atual (snapshot)
   const semanaAtual = {
-    receita_potencial: forecastAtual,
+    receita_potencial: receitaPotencialAtual,  // soma SEM peso de etapa
+    forecast_ajustado: forecastAtual,          // soma COM peso, só SQL→Win
     municipios_ativos: ativos.length,
     eficiencia_dia: eficienciaAtual,
     quente: ativos.filter(m => m.farol === 'Q').length,
@@ -3595,7 +3673,7 @@ async function renderTracking() {
     empenho: ativos.filter(m => m.status === 'Empenho').length,
     entrega: ativos.filter(m => m.status === 'Entrega').length,
     win: ativos.filter(m => m.status === 'Win').length,
-    velocity: tmFarol.Q > 0 ? parseFloat(((tmFarol.Q + tmFarol.M + tmFarol.F) / 3).toFixed(2)) : 0,
+    velocity: velocityPonderada,
     ticket_medio: ticketAtual,
     gargalo,
   };
@@ -3691,15 +3769,15 @@ async function renderTracking() {
 
       <!-- KPIs atuais -->
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.5rem;">
-        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;" title="Receita Potencial Atual = Forecast Ajustado = SOMA(receita × peso_etapa) dos municípios em ETAPAS_ATIVAS. Mesmo valor mostrado em Forecast/Health/Reunião/Indicadores. Δ = variação vs última semana registrada.">
+        <div style="background:var(--accent);color:#fff;border-radius:4px;padding:1rem;" title="Receita Potencial Atual = SOMA da receita BRUTA (sem peso de etapa) dos municípios em ETAPAS_ATIVAS (Prioritária→Win). Mostra o tamanho total da carteira independente de probabilidade de fechar.">
           <div style="font-size:.75rem;opacity:.8;">Receita Potencial Atual</div>
-          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAtual)}</div>
-          <div style="font-size:.8rem;opacity:.8;">${fmtDelta(deltaReceita)} vs semana anterior</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(receitaPotencialAtual)}</div>
+          <div style="font-size:.8rem;opacity:.8;">${fmtDelta(deltaReceita)} vs semana anterior · sem peso</div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Forecast Atual = mesmo cálculo da Receita Potencial Atual. Aqui mostra também a quantidade de municípios em pipeline (ETAPAS_ATIVAS).">
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Forecast Atual = SOMA(receita × peso_etapa) dos municípios em SQL, R1, R2, R3, Licitação, Empenho, Entrega, Win (exclui Prioritária pré-engajamento). Mesma fórmula em Dashboard/Health/Reunião/Indicadores.">
           <div style="font-size:.75rem;color:var(--ink-dim);">Forecast Atual</div>
           <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAtual)}</div>
-          <div style="font-size:.8rem;color:var(--ink-dim);">${ativos.length} municípios ativos</div>
+          <div style="font-size:.8rem;color:var(--ink-dim);">${ativos.filter(m=>ETAPAS_FORECAST.includes(m.status)).length} em SQL→Win · com peso</div>
         </div>
         <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Eficiência (R$/dia) = mediana de (receita_ajustada ÷ dias na etapa) entre os municípios ativos. Quanto maior, mais receita por dia parado. dias_mínimo=1 para não filtrar municípios entrados hoje. Δ = variação vs última semana.">
           <div style="font-size:.75rem;color:var(--ink-dim);">Δ Eficiência (R$/dia)</div>
@@ -3769,12 +3847,13 @@ async function registrarSemana() {
   if (!semana) return;
   const cfg = getCfg();
   const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
+  const receitaPotencialAtual = ativos.reduce((s,m) => s + calcReceita(m, cfg), 0);
   const forecastAtual = calcForecastAjustado(state.municipios, cfg);
   const tmFarol = calcTempoMedioFarol(state.municipios);
+  const tempoRefEtapa = calcTempoRefEtapa(state.municipios, cfg);
 
   // Velocity/ticket/eficiência só consideram SQL→Win (sem Prioritária, pré-engajamento)
-  const ETAPAS_VENDAS_REG = ['SQL','R1','R2','R3','Licitacao','Empenho','Entrega','Win'];
-  const ativosVendasReg = state.municipios.filter(m => ETAPAS_VENDAS_REG.includes(m.status));
+  const ativosVendasReg = state.municipios.filter(m => ETAPAS_FORECAST.includes(m.status));
 
   const eficiencias = ativosVendasReg.map(m => {
     const hoje = new Date();
@@ -3810,9 +3889,18 @@ async function registrarSemana() {
     .map(e => ({ etapa: e, score: contEtapa[e] * tempoMedio[e] }))
     .sort((a,b) => b.score - a.score)[0]?.etapa || null;
 
+  // Velocity ponderada por receita ajustada (mesmo cálculo da tela)
+  let velNum = 0, velDen = 0;
+  ativosVendasReg.forEach(m => {
+    const v = calcVelocity(m, tempoRefEtapa);
+    const r = calcReceitaAjustada(m, cfg);
+    if (r > 0) { velNum += v * r; velDen += r; }
+  });
+  const velocityPond = velDen > 0 ? parseFloat((velNum/velDen).toFixed(2)) : 0;
+
   const { error } = await sb.from('pipeline_tracking').insert({
     semana: semana.trim().toUpperCase(),
-    receita_potencial: forecastAtual,
+    receita_potencial: receitaPotencialAtual,  // sem peso (mudança jun/2026)
     municipios_ativos: ativos.length,
     eficiencia_dia: eficMediana,
     quente: ativos.filter(m => m.farol === 'Q').length,
@@ -3826,7 +3914,7 @@ async function registrarSemana() {
     empenho: contEtapa['Empenho'] || 0,
     entrega: contEtapa['Entrega'] || 0,
     win: contEtapa['Win'] || 0,
-    velocity: parseFloat(((tmFarol.Q + tmFarol.M + tmFarol.F) / 3).toFixed(2)),
+    velocity: velocityPond,
     ticket_medio: ticketMediana,
     gargalo,
     data_registro: new Date().toISOString(),
@@ -3987,11 +4075,13 @@ async function renderReuniao() {
                   <td title="Farol ${m.farol==='Q'?'Quente (Q)':m.farol==='M'?'Morno (M)':m.farol==='F'?'Frio (F)':m.farol==='NV'?'Não Vale (NV)':'não classificado'}. Define o tempo de referência usado no Health.">${m.farol ? `<span class="pill farol-${m.farol}">${m.farol}</span>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
                   <td class="num" title="Alunos = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}.">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
                   <td class="num" style="padding:2px 4px;">
-                    <input type="number" step="any" min="0" placeholder="—"
-                      value="${m.cotacao>0 ? m.cotacao : ''}"
-                      style="width:100px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:${m.cotacao>0?'var(--accent-soft)':'var(--bg)'};text-align:right;color:${m.cotacao>0?'var(--accent)':'var(--ink)'};font-weight:${m.cotacao>0?'600':'400'};"
-                      title="Cotação manual em R$. Cálculo automático seria ${fmtMoney(calcReceitaAutomatica(m, cfg))}. Se preenchida (>0), substitui em TODAS as telas."
-                      onchange="salvarCampoRapido('${m.id}','cotacao', this.value ? parseFloat(this.value) : null); setTimeout(() => renderReuniao(), 600)">
+                    <input type="text" inputmode="numeric" placeholder="—"
+                      value="${m.cotacao>0 ? formatCurrencyBR(m.cotacao) : ''}"
+                      style="width:120px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:${m.cotacao>0?'var(--accent-soft)':'var(--bg)'};text-align:right;color:${m.cotacao>0?'var(--accent)':'var(--ink)'};font-weight:${m.cotacao>0?'600':'400'};"
+                      title="Cotação manual em R$. Cálculo automático seria ${fmtMoney(calcReceitaAutomatica(m, cfg))}. Se preenchida (>0), substitui em TODAS as telas. Aceita números com ou sem formatação (ex: 4112840 ou R$ 4.112.840)."
+                      onfocus="const n = parseCurrencyBR(this.value); this.value = (n != null) ? String(n) : ''"
+                      onblur="const n = parseCurrencyBR(this.value); this.value = (n != null && n > 0) ? formatCurrencyBR(n) : ''"
+                      onchange="salvarCampoRapido('${m.id}','cotacao', parseCurrencyBR(this.value)); setTimeout(() => renderReuniao(), 600)">
                   </td>
                   <td class="num" style="font-weight:600;" title="${m.cotacao>0 ? `Cotação MANUAL = ${fmtMoney(m.cotacao)} (substitui o cálculo automático). ` : `Receita = ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''} = ${fmtMoney(m.receita)}. `}Receita Ajustada = ${fmtMoney(m.receita)} × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.recAdj)}.">${fmtMoney(m.recAdj)}${m.cotacao>0?' 💰':''}</td>
                   <td title="Status ${m.status==='Licitacao'?'Licitação':m.status}. Peso de conversão: ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%."><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
@@ -5287,6 +5377,24 @@ async function renderIndicadores() {
   `;
 }
 
+
+// Edita um campo do indicador direto pelo drawer (afeta TODOS os municípios desse indicador)
+async function editarIndicadorInline(id, campo, valor) {
+  if (!enforceAdmin('⛔ Apenas administradores podem editar o responsável.')) return;
+  if (campo === 'percentual_comissao' && (isNaN(valor) || valor < 0 || valor > 1)) {
+    alert('% comissão deve estar entre 0 e 100');
+    return;
+  }
+  const { data, error } = await sb.from('indicadores_externos')
+    .update({ [campo]: valor }).eq('id', id).select().single();
+  if (error) { alert('Erro: ' + error.message); return; }
+  // Atualiza state local
+  const idx = state.indicadores.findIndex(i => i.id === id);
+  if (idx >= 0) state.indicadores[idx] = data;
+  showSaveIndicator('saved', 'Responsável atualizado');
+  // Re-render do drawer pra refletir mudança (mantém a aba comercial)
+  if (state.currentMunicipio) setTimeout(() => openDrawerTab('comercial'), 100);
+}
 
 async function editarIndicador(id) {
   if (!enforceAdmin()) return;
