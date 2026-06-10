@@ -1923,7 +1923,7 @@ function renderDashboard() {
   const topIndicadores = Object.entries(indMap)
     .filter(([_, d]) => d.receita > 0)
     .sort((a,b) => b[1].receita - a[1].receita)
-    .slice(0, 5);
+    .slice(0, 10);
 
   // Top 10 POR SCORE — ranking por indicador_performance_ef (decrescente).
   // Mantém o valor de receita potencial à direita para contexto.
@@ -2795,9 +2795,15 @@ function renderDrawerComercial(m) {
           <div style="font-weight:700; color:var(--accent); font-size:1rem;">${fmtMoney(comissaoEst)}</div>
         </div>
       </div>
-      <div class="form-grid" style="grid-template-columns:2fr 1fr;gap:.6rem;">
+      <div class="form-grid" style="grid-template-columns:1fr 2fr 1fr;gap:.6rem;">
         <div class="field" style="margin:0;">
-          <label style="font-size:.65rem;">Nome do responsável <span style="opacity:.5;font-weight:400;">(edita em todos os municípios deste responsável)</span></label>
+          <label style="font-size:.65rem;">Código</label>
+          <input type="text" value="${escapeHtml(indSelecionado.codigo)}"
+            onchange="editarIndicadorInline('${indSelecionado.id}','codigo',this.value)"
+            style="padding:.4rem .6rem;border:1px solid var(--line-strong);border-radius:3px;background:#fff;width:100%;">
+        </div>
+        <div class="field" style="margin:0;">
+          <label style="font-size:.65rem;">Nome do responsável <span style="opacity:.5;font-weight:400;">(edita todos)</span></label>
           <input type="text" value="${escapeHtml(indSelecionado.nome)}" data-edit-ind-nome="${indSelecionado.id}"
             onchange="editarIndicadorInline('${indSelecionado.id}','nome',this.value)"
             style="padding:.4rem .6rem;border:1px solid var(--line-strong);border-radius:3px;background:#fff;width:100%;">
@@ -2818,7 +2824,7 @@ function renderDrawerComercial(m) {
           Responsável / Indicador
           <button class="admin-only" onclick="novoIndicadorRapido()" style="font:inherit;font-size:.72rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;">+ Novo</button>
         </label>
-        <select data-field="indicacao">
+        <select data-field="indicacao" onchange="salvarCampoRapido('${m.id}','indicacao',this.value||null)">
           <option value="">— Sem responsável</option>
           ${indicadoresOptions}
         </select>
@@ -2834,13 +2840,21 @@ function renderDrawerComercial(m) {
     <div class="form-grid">
       <div class="field">
         <label>EF1 Real (alunos)</label>
-        <input data-field="ef1_alunos_real" type="number" min="0" step="1" value="${m.ef1_alunos_real != null ? m.ef1_alunos_real : ''}" placeholder="—">
-        <div style="font-size:.7rem;color:var(--ink-dim);margin-top:.25rem;">Fonte (INEP): ${fmtNum(m.ef1_alunos||0)}</div>
+        <input data-field="ef1_alunos_real" type="number" min="0" step="1"
+          value="${m.ef1_alunos_real != null ? m.ef1_alunos_real : ''}" placeholder="—"
+          onchange="salvarCampoRapido('${m.id}','ef1_alunos_real', this.value===''?null:parseInt(this.value))">
+        <div style="font-size:.7rem;margin-top:.25rem;${m.ef1_alunos_real != null ? 'color:var(--accent);font-weight:600;' : 'color:var(--ink-dim);'}">
+          ${m.ef1_alunos_real != null ? `Override ativo: ${fmtNum(m.ef1_alunos_real)} alunos` : `Fonte (INEP): ${fmtNum(m.ef1_alunos||0)}`}
+        </div>
       </div>
       <div class="field">
         <label>EF2 Real (alunos)</label>
-        <input data-field="ef2_alunos_real" type="number" min="0" step="1" value="${m.ef2_alunos_real != null ? m.ef2_alunos_real : ''}" placeholder="—">
-        <div style="font-size:.7rem;color:var(--ink-dim);margin-top:.25rem;">Fonte (INEP): ${fmtNum(m.ef2_alunos||0)}</div>
+        <input data-field="ef2_alunos_real" type="number" min="0" step="1"
+          value="${m.ef2_alunos_real != null ? m.ef2_alunos_real : ''}" placeholder="—"
+          onchange="salvarCampoRapido('${m.id}','ef2_alunos_real', this.value===''?null:parseInt(this.value))">
+        <div style="font-size:.7rem;margin-top:.25rem;${m.ef2_alunos_real != null ? 'color:var(--accent);font-weight:600;' : 'color:var(--ink-dim);'}">
+          ${m.ef2_alunos_real != null ? `Override ativo: ${fmtNum(m.ef2_alunos_real)} alunos` : `Fonte (INEP): ${fmtNum(m.ef2_alunos||0)}`}
+        </div>
       </div>
     </div>
 
@@ -3405,6 +3419,8 @@ function renderHealth() {
   const forecastAjustado = calcForecastAjustado(state.municipios, cfg);
   const tmFarol = calcTempoMedioFarol(state.municipios);
   const cenGlobal = calcCenarios(forecastAjustado, cfg);
+  const recLiqDireto = forecastAjustado * (1 - cfg.impostos);
+  const redesaDireto  = recLiqDireto * cfg.redesa;
 
   // Cenário Potencial por Farol = receita_bruta × peso_farol (não peso de etapa).
   // "Sem Farol — Potencial" = receita bruta sem peso (potencial puro, NÃO entra no forecast).
@@ -3548,13 +3564,13 @@ function renderHealth() {
           <div style="font-size:.75rem;opacity:.8;">Receita Forecast</div>
           <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(forecastAjustado)}</div>
         </div>
-        <div title="Receita Líquida = Forecast × (1 - impostos). Impostos = ${(cfg.impostos*100).toFixed(2)}% (configurável).">
+        <div title="Receita Líquida = Forecast Ajustado × (1 - impostos ${(cfg.impostos*100).toFixed(2)}%). Base: Forecast sem fator de conversão de cenário.">
           <div style="font-size:.75rem;opacity:.8;">Receita Líquida</div>
-          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(cenGlobal.agressivo.recLiq)}</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(recLiqDireto)}</div>
         </div>
-        <div title="Faturamento Redesa = Receita Líquida × ${(cfg.redesa*100).toFixed(0)}%. É a fatia da receita que entra como faturamento Redesa. % configurável.">
+        <div title="Faturamento Redesa = Receita Líquida × ${(cfg.redesa*100).toFixed(0)}%. = ${fmtMoney(recLiqDireto)} × ${(cfg.redesa*100).toFixed(0)}% = ${fmtMoney(redesaDireto)}.">
           <div style="font-size:.75rem;opacity:.8;">Faturamento Redesa</div>
-          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(cenGlobal.agressivo.redesa)}</div>
+          <div style="font-size:1.4rem;font-weight:700;">${fmtMoney(redesaDireto)}</div>
         </div>
       </div>
 
@@ -3866,7 +3882,13 @@ async function registrarSemana() {
   if (!semana) return;
   const cfg = getCfg();
   const ativos = state.municipios.filter(m => ETAPAS_ATIVAS.includes(m.status));
-  const receitaPotencialAtual = ativos.reduce((s,m) => s + calcReceita(m, cfg), 0);
+  // Receita ponderada: peso_etapa × peso_farol (método Reunião Semanal)
+  const receitaPotencialAtual = state.municipios
+    .filter(m => ETAPAS_FORECAST.includes(m.status) && m.farol && ['Q','M','F'].includes(m.farol))
+    .reduce((s, m) => {
+      const pf = { Q: cfg.f_q, M: cfg.f_m, F: cfg.f_f }[m.farol] || 0;
+      return s + calcReceitaAjustada(m, cfg) * pf;
+    }, 0);
   const forecastAtual = calcForecastAjustado(state.municipios, cfg);
   const tmFarol = calcTempoMedioFarol(state.municipios);
   const tempoRefEtapa = calcTempoRefEtapa(state.municipios, cfg);
@@ -3966,6 +3988,7 @@ async function salvarCampoRapido(municipioId, campo, valor) {
   }
   const idx = state.municipios.findIndex(m => m.id === municipioId);
   if (idx !== -1) state.municipios[idx] = data;
+  if (state.currentMunicipio?.id === municipioId) state.currentMunicipio = data;
   showSaveIndicator('saved', 'Salvo');
 }
 
@@ -5786,8 +5809,9 @@ async function salvarConfiguracoes() {
     const [grupo, sub] = el.dataset.cfgNested.split('.');
     grupos[grupo] = grupos[grupo] || {};
     const val = parseFloat(el.value);
-    // Converter % para decimal nos grupos de pesos
-    if (['pesos_forecast','pesos_farol','cenarios_conversao'].includes(grupo)) {
+    // Converter % para decimal — pesos_farol e pesos_forecast entram como % (0-100)
+    // cenarios_conversao já é decimal (0-1), não divide
+    if (['pesos_forecast','pesos_farol'].includes(grupo)) {
       grupos[grupo][sub] = parseFloat((val / 100).toFixed(4));
     } else {
       grupos[grupo][sub] = val;
