@@ -1,0 +1,13 @@
+Backup CRM Eureka — 2026-06-13
+
+- municipios: 0 registros
+- municipios_historico: 0 registros
+- pipeline_tracking: 0 registros
+- indicadores_externos: 0 registros
+- perfis: 0 registros
+- fontes_dados: 0 registros
+- reuniao_semanal: 0 registros
+- configuracoes: 0 registros
+- atividades: 0 registros
+
+Total de tabelas: 9
