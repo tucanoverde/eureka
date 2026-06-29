@@ -1,4 +1,4 @@
-Backup CRM Eureka — 2026-05-30
+Backup CRM Eureka — 2026-06-29
 
 - municipios: 0 registros
 - municipios_historico: 0 registros
