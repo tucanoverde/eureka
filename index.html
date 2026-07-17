@@ -3787,6 +3787,9 @@ async function renderTracking() {
         <td class="num" title="${t.velocity > 0 ? `Velocity = (tempo_médio Q+M+F) ÷ 3 = ${t.velocity.toFixed(2)} dias médios. Considera apenas SQL→Win (sem Prioritária).` : 'Velocity não calculada.'}">${t.velocity > 0 ? t.velocity.toFixed(2)+'v' : '—'}</td>
         <td class="num" title="${t.ticket_medio > 0 ? `Ticket Médio = mediana de receita por aluno entre os SQL→Win (sem Prioritária) = ${fmtMoney(t.ticket_medio)}/aluno.` : 'Ticket Médio não calculado.'}">${t.ticket_medio > 0 ? fmtMoney(t.ticket_medio) : '—'}</td>
         <td title="${t.gargalo ? `Gargalo = ${t.gargalo}. Etapa com maior qtde × tempo médio na época.` : 'Sem gargalo.'}">${escapeHtml(t.gargalo||'—')}</td>
+        <td class="admin-only" style="text-align:center;">
+          <button class="btn danger small" onclick="excluirSemanaTracking('${t.id}')" title="Excluir permanentemente o registro da semana ${escapeHtml(t.semana||'')}.">Excluir</button>
+        </td>
       </tr>`;
   });
 
@@ -3864,10 +3867,11 @@ async function renderTracking() {
                 <th class="num" title="Velocity = (tempo_médio Q + M + F) ÷ 3. Considera apenas SQL→Win (sem Prioritária).">Velocity</th>
                 <th class="num" title="Ticket Médio (mediana) = receita por aluno entre os SQL→Win (sem Prioritária).">Ticket</th>
                 <th title="Gargalo = etapa com maior tempo desperdiçado (qtde × tempo médio).">Gargalo</th>
+                <th class="admin-only" title="Excluir o registro desta semana. Apenas administradores.">Ações</th>
               </tr>
             </thead>
             <tbody>
-              ${htmlTabela || '<tr><td colspan="16" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhuma semana registrada. Clique em "+ Registrar semana atual".</td></tr>'}
+              ${htmlTabela || '<tr><td colspan="20" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhuma semana registrada. Clique em "+ Registrar semana atual".</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -3875,6 +3879,27 @@ async function renderTracking() {
 
     </div>
   `;
+}
+
+async function excluirSemanaTracking(id) {
+  if (!enforceAdmin()) return;
+  const t = state.tracking.find(x => String(x.id) === String(id));
+  if (!t) { alert('Registro não encontrado. Recarregue a página.'); return; }
+  const quando = t.data_registro ? new Date(t.data_registro).toLocaleDateString('pt-BR') : '—';
+  const ok = confirm(
+    `Excluir o registro da semana "${t.semana}"?\n\n` +
+    `Registrado em: ${quando}\n` +
+    `Receita do snapshot: ${fmtMoney(t.receita_potencial || 0)}\n\n` +
+    `Esta linha do Histórico Semanal será removida permanentemente.\n` +
+    `Esta ação NÃO pode ser desfeita.\n\nTem certeza que deseja excluir?`
+  );
+  if (!ok) return;
+
+  const { error } = await sb.from('pipeline_tracking').delete().eq('id', id);
+  if (error) { alert('Erro ao excluir: ' + error.message); return; }
+
+  state.tracking = state.tracking.filter(x => String(x.id) !== String(id));
+  renderTracking();
 }
 
 async function registrarSemana() {
