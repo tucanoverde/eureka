@@ -1,0 +1,33 @@
+# ============================================================
+# ATENCAO: este repositorio e PUBLICO.
+# Nada de credenciais, dumps de banco ou ferramental interno.
+# ============================================================
+
+# --- ops/: ferramental de migracao + credenciais (NUNCA commitar) ---
+# Contem .env com senhas dos bancos (prod e homolog) e token do Cloudflare,
+# binarios do PostgreSQL, dumps e scripts internos.
+ops/
+
+# --- credenciais ---
+.env
+*.env
+!*.env.example
+config.env
+
+# --- dumps / logs de banco ---
+*.sql
+*.dump
+*.log
+
+# --- artefatos acidentais de shell (comandos digitados errado) ---
+cd
+dir
+git
+python
+
+# --- sistema / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+__pycache__/
+*.pyc
