@@ -4042,8 +4042,8 @@ async function renderReuniao() {
   // Semana selecionada: '' = semana atual (campos do município direto)
   const semanaSelecionada = state.semanaSelecionada || '';
 
-  // Estado atual do pipeline
-  const rows = ativos.map(m => {
+  // Deriva métricas de um município (com registro histórico opcional anexado)
+  const derive = (m, reg=null) => {
     const hoje = new Date();
     const dataEtapa = { SQL: m.data_sql, R1: m.data_r1, R2: m.data_r2, R3: m.data_r3, Licitacao: m.data_licitacao, Empenho: m.data_licitacao, Entrega: m.data_licitacao }[m.status];
     const tempoEtapa = dataEtapa ? Math.floor((hoje - new Date(dataEtapa)) / 86400000) : (m.tempo_na_etapa || 0);
@@ -4052,15 +4052,36 @@ async function renderReuniao() {
     const acao = calcAcao(m, health);
     const receita = calcReceita(m, cfg);
     const recAdj = calcReceitaAjustada(m, cfg);
-    // Buscar registro da semana selecionada para este município
-    const reg = semanaSelecionada ? semanasSalvas.find(r => r.semana === semanaSelecionada && r.municipio_id === m.id) : null;
     return { ...m, tempoEtapa, health, velocity, acao, receita, recAdj, reg };
-  }).sort((a,b) => {
-    const order = ETAPAS_PIPELINE;
-    return order.indexOf(a.status) - order.indexOf(b.status) || b.receita - a.receita;
-  });
+  };
 
-  const forecastAdj = rows.reduce((s,r) => s+r.recAdj, 0);
+  // Semana atual: pipeline ativo. Histórico: TODOS os municípios registrados
+  // naquela semana — mesmo os que hoje estão Pausado/Perdido/Novo (o registro
+  // da semana é a fonte, não o status atual).
+  let rows;
+  if (semanaSelecionada) {
+    const regsSemana = semanasSalvas.filter(r => r.semana === semanaSelecionada);
+    rows = regsSemana.map(reg => {
+      const m = state.municipios.find(x => x.id === reg.municipio_id)
+        || { id: reg.municipio_id, municipio: reg.municipio, status: 'Pausado', farol: null, ef1_alunos: 0, ef2_alunos: 0, cotacao: 0 };
+      return derive(m, reg);
+    });
+  } else {
+    rows = ativos.map(m => derive(m, null));
+  }
+  rows.sort((a,b) => {
+    const order = ETAPAS_PIPELINE;
+    // No histórico ordena pelo status REGISTRADO na semana (quando existir)
+    const sa = (semanaSelecionada && a.reg?.status_registro) ? a.reg.status_registro : a.status;
+    const sb_ = (semanaSelecionada && b.reg?.status_registro) ? b.reg.status_registro : b.status;
+    return order.indexOf(sa) - order.indexOf(sb_) || b.receita - a.receita;
+  });
+  // Histórico é registro: campos ficam somente-leitura (editar vendo o
+  // histórico gravava por cima dos campos da semana ATUAL do município)
+  const RO = semanaSelecionada ? 'disabled' : '';
+
+  // No histórico usa a receita ajustada REGISTRADA na semana quando existir
+  const forecastAdj = rows.reduce((s,r) => s + (semanaSelecionada ? (Number(r.reg?.receita_adj_registro) || r.recAdj) : r.recAdj), 0);
   const vermelhos = rows.filter(r => r.health === '🔴').length;
 
   document.getElementById('pageContent').innerHTML = `
@@ -4090,8 +4111,8 @@ async function renderReuniao() {
           <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">Forecast</div>
           <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;">${fmtMoney(forecastAdj)}</div>
         </div>
-        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Quantidade de municípios listados na tabela operacional = ativos em SQL/R1/R2/R3/Licitação/Empenho/Entrega/Win. Prioritária NÃO entra aqui (pré-engajamento).">
-          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">Municípios Ativos</div>
+        <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="${semanaSelecionada?'Quantidade de municípios REGISTRADOS na semana selecionada (inclui os que hoje estão pausados/perdidos).':'Quantidade de municípios listados na tabela operacional = ativos em SQL/R1/R2/R3/Licitação/Empenho/Entrega/Win. Prioritária NÃO entra aqui (pré-engajamento).'}">
+          <div style="font-size:.72rem;color:var(--ink-dim);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.08em;">${semanaSelecionada?'Municípios na Semana':'Municípios Ativos'}</div>
           <div style="font-size:1.3rem;font-weight:600;font-family:Fraunces,serif;">${rows.length}</div>
         </div>
         <div style="background:var(--bg-elev);border:1px solid var(--line);border-radius:4px;padding:1rem;" title="Em atraso = municípios com health 🔴 (tempo na etapa > limiar do farol: Quente 1.5x, Morno 1.3x, Frio 1.2x do tempo médio do farol).">
@@ -4129,9 +4150,16 @@ async function renderReuniao() {
           </thead>
           <tbody>
             ${rows.length === 0
-              ? `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--ink-dim);">Nenhum município ativo.</td></tr>`
+              ? `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--ink-dim);">${semanaSelecionada?'Nenhum município registrado nesta semana.':'Nenhum município ativo.'}</td></tr>`
               : rows.map(m => {
                 const tRefF = tmFarol[m.farol] || 21;
+                // No histórico, mostra o status REGISTRADO na semana (se o registro
+                // tiver; registros antigos não guardavam status — mostra o atual)
+                const stVis = (semanaSelecionada && m.reg?.status_registro) ? m.reg.status_registro : m.status;
+                const faVis = (semanaSelecionada && m.reg?.farol_registro) ? m.reg.farol_registro : m.farol;
+                const stNota = semanaSelecionada
+                  ? (m.reg?.status_registro ? 'Status registrado na semana.' : 'Registro antigo sem status da época — mostrando o status ATUAL do município.')
+                  : '';
                 const acaoExplain = m.acao === 'Agir Hoje' ? 'Health vermelho + receita ≥ R$1M — urgência máxima' :
                                     m.acao === 'Cobrar' ? 'Health vermelho + receita < R$1M — cobrar movimento' :
                                     m.acao === 'Acompanhar' ? 'Está nas etapas finais (R3/Licitação/Empenho/Entrega) — acompanhar avanço' :
@@ -4139,10 +4167,10 @@ async function renderReuniao() {
                 return `
                 <tr title="${escapeHtml(m.municipio)} · Status ${m.status} · Farol ${m.farol||'—'} · ${m.tempoEtapa} dias na etapa · Receita Ajustada ${fmtMoney(m.recAdj)} · Health ${m.health} · Velocity ${m.velocity.toFixed(2)}">
                   <td style="font-weight:600;cursor:pointer;" onclick="openDrawer('${m.id}')" title="Clique para abrir a ficha completa de ${escapeHtml(m.municipio)}.">${escapeHtml(m.municipio)}</td>
-                  <td title="Farol ${m.farol==='Q'?'Quente (Q)':m.farol==='M'?'Morno (M)':m.farol==='F'?'Frio (F)':m.farol==='NV'?'Não Vale (NV)':'não classificado'}. Define o tempo de referência usado no Health.">${m.farol ? `<span class="pill farol-${m.farol}">${m.farol}</span>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
+                  <td title="Farol ${faVis==='Q'?'Quente (Q)':faVis==='M'?'Morno (M)':faVis==='F'?'Frio (F)':faVis==='NV'?'Não Vale (NV)':'não classificado'}. Define o tempo de referência usado no Health.">${faVis ? `<span class="pill farol-${faVis}">${faVis}</span>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
                   <td class="num" title="Alunos = ef1_alunos (${fmtNum(m.ef1_alunos||0)}) + ef2_alunos (${fmtNum(m.ef2_alunos||0)}) = ${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}${m.ei_alunos?` · EI (separado): ${fmtNum(m.ei_alunos)}`:''}.">${fmtNum((m.ef1_alunos||0)+(m.ef2_alunos||0))}</td>
                   <td class="num" style="padding:2px 4px;">
-                    <input type="text" inputmode="numeric" placeholder="—"
+                    <input type="text" inputmode="numeric" placeholder="—" ${RO}
                       value="${m.cotacao>0 ? formatCurrencyBR(m.cotacao) : ''}"
                       style="width:120px;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:${m.cotacao>0?'var(--accent-soft)':'var(--bg)'};text-align:right;color:${m.cotacao>0?'var(--accent)':'var(--ink)'};font-weight:${m.cotacao>0?'600':'400'};"
                       title="Cotação manual em R$. Cálculo automático seria ${fmtMoney(calcReceitaAutomatica(m, cfg))}. Se preenchida (>0), substitui em TODAS as telas. Aceita números com ou sem formatação (ex: 4112840 ou R$ 4.112.840)."
@@ -4150,41 +4178,41 @@ async function renderReuniao() {
                       onblur="const n = parseCurrencyBR(this.value); this.value = (n != null && n > 0) ? formatCurrencyBR(n) : ''"
                       onchange="salvarCampoRapido('${m.id}','cotacao', parseCurrencyBR(this.value)); setTimeout(() => renderReuniao(), 600)">
                   </td>
-                  <td class="num" style="font-weight:600;" title="${m.cotacao>0 ? `Cotação MANUAL = ${fmtMoney(m.cotacao)} (substitui o cálculo automático). ` : `Receita = ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''} = ${fmtMoney(m.receita)}. `}Receita Ajustada = ${fmtMoney(m.receita)} × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.recAdj)}.">${fmtMoney(m.recAdj)}${m.cotacao>0?' 💰':''}</td>
-                  <td title="Status ${m.status==='Licitacao'?'Licitação':m.status}. Peso de conversão: ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%."><span class="pill status-${m.status}">${m.status==='Licitacao'?'Licitação':m.status}</span></td>
+                  <td class="num" style="font-weight:600;" title="${m.cotacao>0 ? `Cotação MANUAL = ${fmtMoney(m.cotacao)} (substitui o cálculo automático). ` : `Receita = ef1×R$${cfg.ef1} + ef2×R$${cfg.ef2}${cfg.ei>0?` + ei×R$${cfg.ei}`:''} = ${fmtMoney(m.receita)}. `}Receita Ajustada = ${fmtMoney(m.receita)} × peso_etapa(${m.status}, ${(getPesoEtapa(m.status,cfg)*100).toFixed(0)}%) = ${fmtMoney(m.recAdj)}.">${fmtMoney(semanaSelecionada ? (Number(m.reg?.receita_adj_registro)||m.recAdj) : m.recAdj)}${m.cotacao>0?' 💰':''}</td>
+                  <td title="Status ${stVis==='Licitacao'?'Licitação':stVis}. Peso de conversão: ${(getPesoEtapa(stVis,cfg)*100).toFixed(0)}%. ${stNota}"><span class="pill status-${stVis}">${stVis==='Licitacao'?'Licitação':stVis}</span></td>
                   <td class="num" title="${m.tempoEtapa} dias na etapa ${m.status} = hoje − data_${m.status.toLowerCase()}. Tempo médio do farol ${m.farol||'—'}: ${tRefF.toFixed(0)}d.">${m.tempoEtapa}d</td>
                   <td style="text-align:center;font-size:1rem;" title="Health: ${m.health==='🟢'?'verde — dentro do tempo médio do farol':m.health==='🟡'?'amarelo — até 30-50% acima do tempo médio':m.health==='🔴'?'vermelho — atrasado, ultrapassou o limiar do farol':'sem farol, sem cálculo'}. Limiares: Quente 1.5x · Morno 1.3x · Frio 1.2x do tempo médio do próprio farol (${tRefF.toFixed(0)}d).">${m.health}</td>
                   <td class="num" title="Velocity = dias na etapa (${m.tempoEtapa}) ÷ tempo médio do farol ${m.farol||'—'} (${tRefF.toFixed(0)}d) = ${m.velocity.toFixed(2)}. Valor < 1 = mais rápido que a média; > 1 = mais lento.">${m.velocity.toFixed(2)}</td>
                   <td style="font-size:.72rem;font-weight:600;color:${m.acao==='Agir Hoje'||m.acao==='Cobrar'?'var(--danger)':m.acao==='Acompanhar'?'var(--warn)':'var(--accent)'};" title="Ação recomendada '${m.acao}': ${acaoExplain}.">${m.acao}</td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="3" placeholder="Próxima ação..."
+                    <textarea rows="3" placeholder="Próxima ação..." ${RO}
                       style="width:100%;min-width:160px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);resize:vertical;line-height:1.4;"
                       oninput="autoSizeTextarea(this)"
                       onfocus="this.style.minHeight='90px';this.style.borderColor='var(--accent)'"
                       onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
-                      onchange="salvarCampoRapido('${m.id}','proxima_acao',this.value)">${escapeHtml(m.reg?.proxima_acao||m.proxima_acao||'')}</textarea>
+                      onchange="salvarCampoRapido('${m.id}','proxima_acao',this.value)">${escapeHtml(semanaSelecionada ? (m.reg?.proxima_acao||'') : (m.proxima_acao||''))}</textarea>
                   </td>
-                  <td style="padding:2px 4px;"><input type="date" value="${m.reg?.data_proxima_acao||m.data_proxima_acao||''}"
+                  <td style="padding:2px 4px;"><input type="date" ${RO} value="${semanaSelecionada ? (m.reg?.data_proxima_acao||'') : (m.data_proxima_acao||'')}"
                     style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
                     onchange="salvarCampoRapido('${m.id}','data_proxima_acao',this.value)"></td>
-                  <td style="padding:2px 4px;"><input type="text" list="resp-options" value="${escapeHtml(m.reg?.responsavel||m.responsavel||'')}" placeholder="Responsável..."
+                  <td style="padding:2px 4px;"><input type="text" list="resp-options" ${RO} value="${escapeHtml(semanaSelecionada ? (m.reg?.responsavel||'') : (m.responsavel||''))}" placeholder="Responsável..."
                     style="width:100%;border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:inherit;font-size:.75rem;background:var(--bg);"
                     onchange="salvarCampoRapido('${m.id}','responsavel',this.value)"></td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="3" placeholder="Bloqueio..."
+                    <textarea rows="3" placeholder="Bloqueio..." ${RO}
                       style="width:100%;min-width:140px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--danger);resize:vertical;line-height:1.4;"
                       oninput="autoSizeTextarea(this)"
                       onfocus="this.style.minHeight='90px';this.style.borderColor='var(--danger)'"
                       onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
-                      onchange="salvarCampoRapido('${m.id}','bloqueio',this.value)">${escapeHtml(m.reg?.bloqueio||m.bloqueio||'')}</textarea>
+                      onchange="salvarCampoRapido('${m.id}','bloqueio',this.value)">${escapeHtml(semanaSelecionada ? (m.reg?.bloqueio||'') : (m.bloqueio||''))}</textarea>
                   </td>
                   <td style="padding:2px 4px;">
-                    <textarea rows="3" placeholder="Fechamento..."
+                    <textarea rows="3" placeholder="Fechamento..." ${RO}
                       style="width:100%;min-width:150px;border:1px solid var(--line);border-radius:3px;padding:4px 6px;font:inherit;font-size:.75rem;background:var(--bg);color:var(--accent);resize:vertical;line-height:1.4;"
                       oninput="autoSizeTextarea(this)"
                       onfocus="this.style.minHeight='90px';this.style.borderColor='var(--accent)'"
                       onblur="this.style.borderColor='var(--line)';autoSizeTextarea(this)"
-                      onchange="salvarCampoRapido('${m.id}','fechamento_semana',this.value)">${escapeHtml(m.reg?.fechamento_semana ?? m.fechamento_semana ?? '')}</textarea>
+                      onchange="salvarCampoRapido('${m.id}','fechamento_semana',this.value)">${escapeHtml(semanaSelecionada ? (m.reg?.fechamento_semana ?? '') : (m.fechamento_semana ?? ''))}</textarea>
                   </td>
                 </tr>
               `;}).join('')}
@@ -4301,12 +4329,22 @@ async function registrarSemanaReuniao() {
     responsavel: m.responsavel || null,
     bloqueio: m.bloqueio || null,
     fechamento_semana: m.fechamento_semana || null,  // captura o fechamento digitado na reunião
+    // Foto do momento (permite ver "como estava" mesmo que o município pause depois)
+    status_registro: m.status || null,
+    farol_registro: m.farol || null,
+    cotacao_registro: m.cotacao || null,
+    receita_adj_registro: calcReceitaAjustada(m, cfg),
     criado_por: state.user.id,
   }));
 
   if (registros.length === 0) { alert('Nenhum município ativo para registrar.'); return; }
 
-  const { error } = await sb.from('reuniao_semanal').insert(registros);
+  let { error } = await sb.from('reuniao_semanal').insert(registros);
+  if (error && /column|schema cache/i.test(error.message||'')) {
+    // Banco ainda sem as colunas novas (migração pendente): grava no formato antigo
+    const basicos = registros.map(({ status_registro, farol_registro, cotacao_registro, receita_adj_registro, ...b }) => b);
+    ({ error } = await sb.from('reuniao_semanal').insert(basicos));
+  }
   if (error) { alert('Erro: ' + error.message); return; }
   showSaveIndicator('saved', `Semana ${semana} registrada com ${registros.length} municípios!`);
   renderReuniao();
