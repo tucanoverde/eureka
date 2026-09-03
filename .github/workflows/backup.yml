@@ -34,7 +34,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           python3 << 'EOF'
-          import requests, json, os
+          import requests, json, os, sys
           from datetime import datetime
 
           url = os.environ['SUPABASE_URL']
@@ -74,8 +74,10 @@ jobs:
                       params={'select': '*'}
                   )
                   if r.status_code not in [200, 206]:
-                      print(f'  Erro {r.status_code}: {r.text[:100]}')
-                      break
+                      # Erro HTTP (chave revogada, tabela inexistente etc.) NÃO pode
+                      # virar backup vazio silencioso: aborta o job sem commit/email.
+                      print(f'  ERRO {r.status_code} em {tabela}: {r.text[:200]}')
+                      sys.exit(1)
                   rows = r.json()
                   if not rows:
                       break
@@ -88,6 +90,12 @@ jobs:
                   json.dump(all_rows, f, ensure_ascii=False, indent=2, default=str)
               print(f'  {len(all_rows)} registros salvos')
               resumo.append(f'- {tabela}: {len(all_rows)} registros')
+
+              if tabela == 'municipios' and len(all_rows) == 0:
+                  # A base de municípios nunca é vazia em produção (TAM ~5.572).
+                  # Zero registros aqui = credencial/URL errada, não banco vazio.
+                  print('ERRO: municipios retornou 0 registros — abortando backup.')
+                  sys.exit(1)
 
           with open(f'backups/{data}/_resumo.txt', 'w', encoding='utf-8') as f:
               f.write(f'Backup CRM Eureka — {data}\n\n')
