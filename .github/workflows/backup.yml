@@ -105,23 +105,6 @@ jobs:
           print(f'Backup completo: {data}')
           EOF
 
-      - name: Limpar backups com mais de 30 dias
-        run: |
-          python3 -c "
-          import os, shutil
-          from datetime import datetime, timedelta
-          limite = datetime.now() - timedelta(days=30)
-          pasta = 'backups'
-          if os.path.exists(pasta):
-              for d in os.listdir(pasta):
-                  try:
-                      if datetime.strptime(d, '%Y-%m-%d') < limite:
-                          shutil.rmtree(os.path.join(pasta, d))
-                          print(f'Removido: {d}')
-                  except: pass
-          print('Limpeza OK')
-          "
-
       - name: Compactar pasta do dia em ZIP
         id: zip
         run: |
@@ -168,13 +151,45 @@ jobs:
             Em caso de problema, fale com Cesar.
           attachments: backup-eureka-${{ env.BACKUP_DATE }}.zip
 
-      - name: Commit e push do backup
+      # Os dados do CRM (perfis com e-mail/telefone, pipeline comercial) NAO
+      # podem ser gravados aqui: este repositorio e PUBLICO porque o GitHub
+      # Pages so serve o CRM de graca assim. Por isso o backup vai para o
+      # repositorio PRIVADO tucanoverde/eureka-backups, via deploy key.
+      - name: Guardar backup no repositório privado
+        env:
+          SSH_KEY: ${{ secrets.BACKUP_SSH_KEY }}
         run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          git clone --quiet git@github.com:tucanoverde/eureka-backups.git /tmp/privado
+          mkdir -p /tmp/privado/backups
+          cp -r "backups/${BACKUP_DATE}" "/tmp/privado/backups/"
+
+          # Retencao de 30 dias, agora aplicada no repositorio privado
+          python3 - <<'PY'
+          import os, shutil
+          from datetime import datetime, timedelta
+          limite = datetime.now() - timedelta(days=30)
+          pasta = '/tmp/privado/backups'
+          for d in os.listdir(pasta):
+              try:
+                  if datetime.strptime(d, '%Y-%m-%d') < limite:
+                      shutil.rmtree(os.path.join(pasta, d))
+                      print(f'Removido (30d+): {d}')
+              except ValueError:
+                  pass
+          PY
+
+          cd /tmp/privado
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add backups/
-          git diff --staged --quiet || git commit -m "backup automático ${BACKUP_DATE}"
-          git push
+          git diff --staged --quiet || git commit -q -m "backup automático ${BACKUP_DATE}"
+          git push --quiet
+          echo "Backup guardado em tucanoverde/eureka-backups (privado)."
 
       # Sem isto, uma falha só aparece na aba Actions e passa semanas
       # despercebida — foi o que aconteceu entre abril e setembro/2026.

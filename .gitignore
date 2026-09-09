@@ -31,3 +31,4 @@ Thumbs.db
 .vscode/
 __pycache__/
 *.pyc
+backups/
