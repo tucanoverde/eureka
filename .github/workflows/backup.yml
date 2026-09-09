@@ -175,3 +175,31 @@ jobs:
           git add backups/
           git diff --staged --quiet || git commit -m "backup automático ${BACKUP_DATE}"
           git push
+
+      # Sem isto, uma falha só aparece na aba Actions e passa semanas
+      # despercebida — foi o que aconteceu entre abril e setembro/2026.
+      - name: Avisar o Cesar se o backup falhou
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "⚠️ FALHOU o backup do CRM Eureka — ${{ env.BACKUP_DATE }}"
+          to: cesaogolgpt@gmail.com
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            O backup automático do CRM Eureka FALHOU em ${{ env.BACKUP_DATE }}.
+
+            NENHUM e-mail de backup foi enviado ao Luis hoje.
+
+            Ver o erro:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Causa mais comum: a chave do Supabase (secret SUPABASE_SERVICE_KEY)
+            venceu ou foi trocada pela chave errada (publishable no lugar da secreta).
+
+            Como corrigir em 1 comando, na pasta C:\Users\Cesar\eureka:
+              powershell -ExecutionPolicy Bypass -File ops\atualizar-chave-backup.ps1
