@@ -122,9 +122,12 @@ jobs:
           try:
               runs = requests.get(f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/backup-crmeureka.yml/runs?per_page=20",
                                   headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}, timeout=60).json().get('workflow_runs', [])
-              rec = [x for x in runs if x['created_at'][:10] >= (hoje - timedelta(days=7)).isoformat() and x['event'] == 'schedule']
+              rec = [x for x in runs if x['created_at'][:10] >= (hoje - timedelta(days=7)).isoformat()
+                     and x['event'] in ('schedule', 'workflow_dispatch') and x['status'] == 'completed']
               suc = [x for x in rec if x['conclusion'] == 'success']
-              (ok if rec and len(suc) == len(rec) else falha)(f"E1 runs agendados na semana: {len(suc)}/{len(rec)} com sucesso (e-mail sai só em sucesso)")
+              agd = [x for x in rec if x['event'] == 'schedule']
+              # exige ao menos 1 execução com sucesso na semana e nenhuma falha (na 1ª semana pode ser só manual)
+              (ok if rec and len(suc) == len(rec) else falha)(f"E1 backups na semana: {len(suc)}/{len(rec)} com sucesso ({len(agd)} agendados, {len(rec)-len(agd)} manuais; e-mail sai só em sucesso)")
           except Exception as e: falha(f"E1 não consegui ler os runs: {e}")
           rel = f"Verificação semanal — {os.environ['TENANT_LABEL']} — {hoje.isoformat()}\n\n" + '\n'.join(R)
           print(rel)
