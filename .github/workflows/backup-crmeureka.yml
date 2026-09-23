@@ -1,0 +1,184 @@
+name: Backup Diário — CRM EUREKA
+
+# Backup do CRM EUREKA (crmeureka.tucanoverde.com, projeto Supabase kibkldlvialhxwobkoko).
+# Roda neste repositorio apenas para reutilizar MAIL_USERNAME/MAIL_PASSWORD (senha de app do Gmail).
+# Secrets proprios (prefixo CRMEUREKA_) — nunca os SUPABASE_* do CRM Redesa.
+# Os dados vao para o repositorio PRIVADO tucanoverde/crmeureka-backups via deploy key.
+
+on:
+  schedule:
+    - cron: '30 6 * * *'   # 06:30 UTC = 03:30 Brasília (o backup do Redesa roda às 06:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TENANT: crmeureka
+  TENANT_LABEL: "CRM EUREKA (crmeureka.tucanoverde.com)"
+  REF_ESPERADO: kibkldlvialhxwobkoko
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dependências
+        run: pip install requests
+
+      - name: Data do backup
+        run: echo "BACKUP_DATE=$(date +'%Y-%m-%d')" >> "$GITHUB_ENV"
+
+      - name: Exportar backup do Supabase (CRM EUREKA)
+        env:
+          SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import requests, json, os, sys, hashlib
+          url = os.environ['SUPABASE_URL']; key = os.environ['SUPABASE_SERVICE_KEY']
+          assert os.environ['REF_ESPERADO'] in url, 'CRMEUREKA_SUPABASE_URL nao e o projeto crmeureka - abortando (anticontaminacao)'
+          headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
+          tabelas = ['municipios','municipios_historico','pipeline_tracking','indicadores_externos',
+                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades']
+          data = os.environ['BACKUP_DATE']; pasta = f'backups/{data}'
+          os.makedirs(pasta, exist_ok=True)
+          resumo = []
+          manifest = {'tenant': os.environ['TENANT'], 'label': os.environ['TENANT_LABEL'],
+                      'project_ref': os.environ['REF_ESPERADO'], 'data': data, 'tabelas': {}}
+          for t in tabelas:
+              rows, offset, limit = [], 0, 1000
+              while True:
+                  r = requests.get(f'{url}/rest/v1/{t}', headers={**headers, 'Range': f'{offset}-{offset+limit-1}'},
+                                   params={'select': '*'}, timeout=120)
+                  if r.status_code not in (200, 206):
+                      print(f'ERRO {r.status_code} em {t}: {r.text[:200]}'); sys.exit(1)
+                  chunk = r.json()
+                  if not chunk: break
+                  rows.extend(chunk)
+                  if len(chunk) < limit: break
+                  offset += limit
+              path = f'{pasta}/{t}.json'
+              with open(path, 'w', encoding='utf-8') as f:
+                  json.dump(rows, f, ensure_ascii=False, indent=2, default=str)
+              sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+              manifest['tabelas'][t] = {'linhas': len(rows), 'bytes': os.path.getsize(path), 'sha256': sha}
+              resumo.append(f'- {t}: {len(rows)} registros')
+              print(f'  {t}: {len(rows)} registros')
+              if t == 'municipios' and len(rows) < 5500:
+                  print(f'ERRO: municipios com {len(rows)} registros (esperado ~5.568) - abortando.'); sys.exit(1)
+          with open(f'{pasta}/_resumo.txt', 'w', encoding='utf-8') as f:
+              f.write(f"Backup {os.environ['TENANT_LABEL']} — {data}\n\n" + '\n'.join(resumo) + f'\n\nTotal de tabelas: {len(tabelas)}\n')
+          with open(f'{pasta}/_manifest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          print('Backup completo:', data)
+          PYEOF
+
+      - name: Check diário — backup x banco vivo (9 tabelas)
+        env:
+          SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import requests, json, os, sys, hashlib
+          url = os.environ['SUPABASE_URL']; key = os.environ['SUPABASE_SERVICE_KEY']
+          h = {'apikey': key, 'Authorization': f'Bearer {key}', 'Prefer': 'count=exact', 'Range': '0-0'}
+          pasta = f"backups/{os.environ['BACKUP_DATE']}"
+          man = json.load(open(f'{pasta}/_manifest.json', encoding='utf-8'))
+          falhas, linhas = [], []
+          for t, m in man['tabelas'].items():
+              r = requests.get(f'{url}/rest/v1/{t}', headers=h, params={'select': '*'}, timeout=60)
+              vivo = int(r.headers.get('content-range', '*/-1').split('/')[-1]) if r.status_code in (200, 206) else -1
+              arq = json.load(open(f'{pasta}/{t}.json', encoding='utf-8'))
+              sha = hashlib.sha256(open(f'{pasta}/{t}.json', 'rb').read()).hexdigest()
+              ok = (vivo == m['linhas'] == len(arq)) and sha == m['sha256']
+              linhas.append(f"{'OK  ' if ok else 'ERRO'} {t:22s} banco={vivo:>7} backup={len(arq):>7}")
+              if not ok: falhas.append(t)
+          rel = f"Verificação do backup {os.environ['BACKUP_DATE']} — {os.environ['TENANT_LABEL']}\n\n" + '\n'.join(linhas)
+          print(rel)
+          with open(f'{pasta}/_verificacao.txt', 'w', encoding='utf-8') as f: f.write(rel + '\n')
+          if falhas:
+              print('\nDIVERGENCIA em:', falhas); sys.exit(1)
+          PYEOF
+
+      - name: Compactar (nome com o tenant)
+        run: |
+          cd backups && zip -qr "../backup-${TENANT}-${BACKUP_DATE}.zip" "${BACKUP_DATE}/" && cd ..
+          ls -lh "backup-${TENANT}-${BACKUP_DATE}.zip"
+          echo "ZIP_SIZE=$(du -h backup-${TENANT}-${BACKUP_DATE}.zip | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: Guardar no repositório privado crmeureka-backups
+        env:
+          SSH_KEY: ${{ secrets.CRMEUREKA_BACKUP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git clone --quiet git@github.com:tucanoverde/crmeureka-backups.git /tmp/privado
+          mkdir -p /tmp/privado/backups
+          cp -r "backups/${BACKUP_DATE}" "/tmp/privado/backups/"
+          python3 - << 'PYEOF'
+          import os, shutil
+          from datetime import datetime, timedelta
+          lim = datetime.now() - timedelta(days=30)
+          for d in os.listdir('/tmp/privado/backups'):
+              try:
+                  if datetime.strptime(d, '%Y-%m-%d') < lim:
+                      shutil.rmtree(os.path.join('/tmp/privado/backups', d)); print('Removido (30d+):', d)
+              except ValueError:
+                  pass
+          PYEOF
+          cd /tmp/privado
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add backups/
+          git diff --staged --quiet || git commit -q -m "backup CRM EUREKA ${BACKUP_DATE}"
+          git push --quiet
+          echo "Guardado em tucanoverde/crmeureka-backups (privado)."
+
+      - name: Enviar backup por e-mail
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Backup CRM EUREKA — ${{ env.BACKUP_DATE }}"
+          to: ${{ secrets.CRMEUREKA_MAIL_TO }}
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            Backup automático do CRM EUREKA (crmeureka.tucanoverde.com) para ${{ env.BACKUP_DATE }}.
+
+            Este é o CRM do cliente Eureka — NÃO é o backup do CRM Redesa.
+
+            Anexo: backup-crmeureka-${{ env.BACKUP_DATE }}.zip (${{ env.ZIP_SIZE }})
+            Tabelas: municipios, municipios_historico, pipeline_tracking, indicadores_externos,
+            perfis, fontes_dados, reuniao_semanal, configuracoes, atividades.
+            Verificação diária contra o banco: OK (todas as tabelas conferidas).
+
+            ---
+            Gerado automaticamente todo dia às 03:30 (Brasília). Em caso de problema, fale com o César.
+          attachments: backup-crmeureka-${{ env.BACKUP_DATE }}.zip
+
+      - name: Avisar o César se falhou
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "⚠️ FALHOU o backup do CRM EUREKA — ${{ env.BACKUP_DATE }}"
+          to: cesaogolgpt@gmail.com
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            O backup (ou a verificação diária) do CRM EUREKA (crmeureka.tucanoverde.com) FALHOU em ${{ env.BACKUP_DATE }}.
+            Nenhum e-mail de backup foi enviado ao cliente hoje.
+            Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
