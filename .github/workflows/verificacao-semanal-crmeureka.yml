@@ -1,0 +1,214 @@
+name: Verificação Semanal — CRM EUREKA
+
+# Robo semanal do CRM EUREKA (crmeureka.tucanoverde.com). Roda neste repositorio apenas para reutilizar
+# MAIL_USERNAME/MAIL_PASSWORD. Le o repo privado crmeureka-backups (deploy key) e o banco vivo (service key).
+# SEMPRE manda e-mail: [OK] ou [FALHA]. Se o e-mail de segunda nao chegar, tratar como falha.
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # segunda 08:00 UTC = 05:00 Brasília (depois do backup diário das 06:30 UTC)
+  workflow_dispatch:
+    inputs:
+      restauracao:
+        description: 'Forçar o teste de restauração (normalmente só na 1ª segunda do mês)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  TENANT: crmeureka
+  TENANT_LABEL: "CRM EUREKA (crmeureka.tucanoverde.com)"
+  REF_ESPERADO: kibkldlvialhxwobkoko
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: teste
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dependências
+        run: pip install requests psycopg2-binary
+
+      - name: Clonar o repositório privado de backups
+        env:
+          SSH_KEY: ${{ secrets.CRMEUREKA_BACKUP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git clone --quiet git@github.com:tucanoverde/crmeureka-backups.git /tmp/bk
+          ls /tmp/bk/backups | tail -8
+
+      - name: Checagens A–E (existência, frescor, integridade, não-decrescimento, banco vivo, e-mails)
+        id: checks
+        env:
+          SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 << 'PYEOF'
+          import os, sys, json, glob, hashlib, subprocess, requests
+          from datetime import date, datetime, timedelta, timezone
+          R = []; FALHAS = []
+          def ok(msg): R.append('OK    ' + msg)
+          def falha(msg): R.append('FALHA ' + msg); FALHAS.append(msg)
+          base = '/tmp/bk/backups'
+          dias = sorted(d for d in os.listdir(base) if len(d) == 10 and d[4] == '-')
+          hoje = date.today()
+          # A1 existência: todos os dias desde o 1º backup (máx 7)
+          primeiro = date.fromisoformat(dias[0]) if dias else hoje
+          esperados = [(hoje - timedelta(days=i)).isoformat() for i in range(1, 8) if (hoje - timedelta(days=i)) >= primeiro]
+          faltando = [d for d in esperados if d not in dias]
+          (falha if faltando else ok)(f"A1 existência: {len(esperados)-len(faltando)}/{len(esperados)} dias presentes" + (f" — faltam {faltando}" if faltando else ""))
+          if not dias: print('\n'.join(R)); sys.exit(1)
+          ult = dias[-1]; P = f'{base}/{ult}'
+          # A2 frescor (data do commit do último backup)
+          ts = subprocess.run(['git', '-C', '/tmp/bk', 'log', '-1', '--format=%cI', '--', f'backups/{ult}'], capture_output=True, text=True).stdout.strip()
+          idade_h = (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds() / 3600 if ts else 999
+          (ok if idade_h <= 36 else falha)(f"A2 frescor: último backup {ult}, há {idade_h:.0f} h (limite 36 h)")
+          # B1 arquivos abrem, batem com o manifesto (linhas + sha256)
+          man = json.load(open(f'{P}/_manifest.json', encoding='utf-8'))
+          if man.get('project_ref') != os.environ['REF_ESPERADO']: falha(f"B0 manifesto de outro projeto: {man.get('project_ref')}")
+          cont = {}
+          for t, m in man['tabelas'].items():
+              try:
+                  arq = json.load(open(f'{P}/{t}.json', encoding='utf-8'))
+                  sha = hashlib.sha256(open(f'{P}/{t}.json', 'rb').read()).hexdigest()
+                  cont[t] = len(arq)
+                  if isinstance(arq, list) and len(arq) == m['linhas'] and sha == m['sha256']: ok(f"B1 {t}: {len(arq)} linhas, sha256 confere")
+                  else: falha(f"B1 {t}: linhas {len(arq)} x manifesto {m['linhas']} / sha {'igual' if sha == m['sha256'] else 'DIFERENTE'}")
+              except Exception as e: falha(f"B1 {t}: não abre ({e})")
+          # B2 tamanho mínimo (o teste que pegaria abr–set/2026)
+          mb = os.path.getsize(f'{P}/municipios.json') / 1e6
+          (ok if mb >= 9 else falha)(f"B2 municipios.json = {mb:.1f} MB (mínimo 9 MB)")
+          # C1 base pública íntegra
+          muni = json.load(open(f'{P}/municipios.json', encoding='utf-8'))
+          n = len(muni); ibge = {r.get('codigo_ibge') for r in muni}; ufs = {r.get('uf') for r in muni}
+          nulos = sum(1 for r in muni for c in ('municipio', 'uf', 'ef1_alunos', 'ef2_alunos', 'latitude', 'longitude') if r.get(c) in (None, ''))
+          c1 = 5560 <= n <= 5600 and len(ibge) == n and len(ufs) == 27 and nulos == 0
+          (ok if c1 else falha)(f"C1 base pública: {n} municípios, {len(ibge)} IBGE únicos, {len(ufs)} UFs, {nulos} nulos em colunas-chave")
+          # C2 não-decrescimento das tabelas de INPUT vs 7 dias atrás (perda silenciosa)
+          ref = [d for d in dias if d <= (hoje - timedelta(days=7)).isoformat()]
+          if ref:
+              antes = json.load(open(f'{base}/{ref[-1]}/_manifest.json', encoding='utf-8'))['tabelas']
+              for t in ('perfis', 'reuniao_semanal', 'pipeline_tracking', 'atividades', 'municipios_historico', 'indicadores_externos', 'configuracoes', 'fontes_dados'):
+                  a, b = antes.get(t, {}).get('linhas', 0), cont.get(t, 0)
+                  (ok if b >= a else falha)(f"C2 {t}: {a} → {b} ({ref[-1]} → {ult})" + (" QUEDA" if b < a else ""))
+          else: ok("C2 não-decrescimento: ainda sem backup de 7 dias atrás para comparar")
+          # D1 banco vivo responde e bate com o backup
+          h = {'apikey': os.environ['SUPABASE_SERVICE_KEY'], 'Authorization': 'Bearer ' + os.environ['SUPABASE_SERVICE_KEY'], 'Prefer': 'count=exact', 'Range': '0-0'}
+          try:
+              r = requests.get(os.environ['SUPABASE_URL'] + '/rest/v1/municipios?select=codigo_ibge', headers=h, timeout=60)
+              vivo = int(r.headers.get('content-range', '*/-1').split('/')[-1]) if r.status_code in (200, 206) else -1
+              (ok if vivo == n else falha)(f"D1 banco vivo: HTTP {r.status_code}, municipios={vivo} (backup {n})")
+          except Exception as e: falha(f"D1 banco vivo inacessível: {e}")
+          # E1 runs do backup diário nos últimos 7 dias (mesmo repo) e passo de e-mail
+          try:
+              runs = requests.get(f"https://api.github.com/repos/{os.environ['REPO']}/actions/workflows/backup-crmeureka.yml/runs?per_page=20",
+                                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}, timeout=60).json().get('workflow_runs', [])
+              rec = [x for x in runs if x['created_at'][:10] >= (hoje - timedelta(days=7)).isoformat() and x['event'] == 'schedule']
+              suc = [x for x in rec if x['conclusion'] == 'success']
+              (ok if rec and len(suc) == len(rec) else falha)(f"E1 runs agendados na semana: {len(suc)}/{len(rec)} com sucesso (e-mail sai só em sucesso)")
+          except Exception as e: falha(f"E1 não consegui ler os runs: {e}")
+          rel = f"Verificação semanal — {os.environ['TENANT_LABEL']} — {hoje.isoformat()}\n\n" + '\n'.join(R)
+          print(rel)
+          open('/tmp/relatorio.txt', 'w', encoding='utf-8').write(rel)
+          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write(f"RESULTADO={'FALHA' if FALHAS else 'OK'}\nN_FALHAS={len(FALHAS)}\n")
+          PYEOF
+
+      - name: Teste de restauração (1ª segunda do mês, ou se forçado)
+        if: ${{ github.event.inputs.restauracao == 'true' || (github.event_name == 'schedule' && github.run_number > 0) }}
+        env:
+          PGPASSWORD: teste
+        run: |
+          DIA=$(date +%d); FORCADO="${{ github.event.inputs.restauracao }}"
+          if [ "$FORCADO" != "true" ] && [ "$DIA" -gt 7 ]; then echo "RESTAURACAO=pulado (não é a 1ª segunda do mês)" >> "$GITHUB_ENV"; exit 0; fi
+          set -e
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -q <<'SQL'
+          create role anon nologin; create role authenticated nologin; create role service_role nologin; create role supabase_admin nologin;
+          create schema auth; create schema extensions;
+          create extension if not exists "uuid-ossp" with schema extensions; create extension if not exists pgcrypto with schema extensions; create extension if not exists unaccent with schema extensions;
+          create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb, created_at timestamptz default now());
+          create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          create function auth.role() returns text language sql stable as $$ select nullif(current_setting('request.jwt.claim.role', true), '') $$;
+          create function auth.email() returns text language sql stable as $$ select nullif(current_setting('request.jwt.claim.email', true), '') $$;
+          SQL
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -q -f /tmp/bk/schema/crmeureka_schema.sql
+          python3 << 'PYEOF'
+          import json, os, psycopg2, psycopg2.extras
+          base = '/tmp/bk/backups'; ult = sorted(d for d in os.listdir(base) if len(d) == 10)[-1]; P = f'{base}/{ult}'
+          con = psycopg2.connect(host='localhost', user='postgres', password='teste', dbname='postgres'); cur = con.cursor()
+          cur.execute("alter table public.municipios disable trigger user; alter table public.municipios_historico disable trigger user;")
+          man = json.load(open(f'{P}/_manifest.json', encoding='utf-8'))
+          # usuários stub em auth.users para satisfazer FKs (criado_por etc.)
+          ids = set()
+          for t in man['tabelas']:
+              for r in json.load(open(f'{P}/{t}.json', encoding='utf-8')):
+                  for c in ('criado_por', 'atualizado_por', 'alterado_por', 'aprovado_por', 'ei_alunos_editado_por', 'id' if t == 'perfis' else '_'):
+                      v = r.get(c)
+                      if isinstance(v, str) and len(v) == 36: ids.add(v)
+          for i in ids: cur.execute("insert into auth.users(id) values (%s) on conflict do nothing", (i,))
+          ordem = ['perfis', 'fontes_dados', 'configuracoes', 'municipios', 'indicadores_externos', 'municipios_historico', 'reuniao_semanal', 'pipeline_tracking', 'atividades']
+          res = []
+          for t in ordem:
+              rows = json.load(open(f'{P}/{t}.json', encoding='utf-8'))
+              cur.execute("select column_name, data_type, is_generated from information_schema.columns where table_schema='public' and table_name=%s order by ordinal_position", (t,))
+              cols = [(c, dt) for c, dt, g in cur.fetchall() if g != 'ALWAYS']
+              cur.execute(f"alter table public.{t} disable trigger user")
+              for r in rows:
+                  vals = []
+                  for c, dt in cols:
+                      v = r.get(c)
+                      if v is None: vals.append(None)
+                      elif dt in ('json', 'jsonb'): vals.append(psycopg2.extras.Json(v))
+                      elif dt == 'ARRAY': vals.append(list(v) if isinstance(v, list) else v)
+                      else: vals.append(v)
+                  cur.execute(f"insert into public.{t} ({','.join(c for c, _ in cols)}) values ({','.join(['%s']*len(cols))})", vals)
+              cur.execute(f"select count(*) from public.{t}"); n = cur.fetchone()[0]
+              res.append(f"{'OK   ' if n == len(rows) else 'FALHA'} restaurou {t}: {n}/{len(rows)}")
+          con.commit(); print('\n'.join(res))
+          open('/tmp/restauracao.txt', 'w', encoding='utf-8').write('\n'.join(res))
+          if any(l.startswith('FALHA') for l in res): raise SystemExit(1)
+          PYEOF
+          echo "RESTAURACAO=OK" >> "$GITHUB_ENV"
+
+      - name: Montar relatório final
+        if: always()
+        run: |
+          { cat /tmp/relatorio.txt 2>/dev/null || echo "(checagens não rodaram)"; echo; echo "Teste de restauração: ${RESTAURACAO:-FALHOU (ver log)}"; cat /tmp/restauracao.txt 2>/dev/null; } > /tmp/final.txt
+          echo "ASSUNTO=[${RESULTADO:-FALHA}] Verificação semanal do CRM EUREKA — $(date +%Y-%m-%d)" >> "$GITHUB_ENV"
+          cat /tmp/final.txt
+
+      - name: E-mail semanal ao César (sempre)
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ env.ASSUNTO }}
+          to: cesaogolgpt@gmail.com
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: file:///tmp/final.txt
+
+      - name: Falhar o job se houve falha
+        if: env.RESULTADO != 'OK'
+        run: exit 1
