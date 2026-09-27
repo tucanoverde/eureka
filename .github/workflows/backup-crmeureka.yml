@@ -44,7 +44,7 @@ jobs:
           assert os.environ['REF_ESPERADO'] in url, 'CRMEUREKA_SUPABASE_URL nao e o projeto crmeureka - abortando (anticontaminacao)'
           headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
           tabelas = ['municipios','municipios_historico','pipeline_tracking','indicadores_externos',
-                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades']
+                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos']
           data = os.environ['BACKUP_DATE']; pasta = f'backups/{data}'
           os.makedirs(pasta, exist_ok=True)
           resumo = []
@@ -110,6 +110,7 @@ jobs:
           cd backups && zip -qr "../backup-${TENANT}-${BACKUP_DATE}.zip" "${BACKUP_DATE}/" && cd ..
           ls -lh "backup-${TENANT}-${BACKUP_DATE}.zip"
           echo "ZIP_SIZE=$(du -h backup-${TENANT}-${BACKUP_DATE}.zip | cut -f1)" >> "$GITHUB_ENV"
+          echo "ZIP_BYTES=$(stat -c %s backup-${TENANT}-${BACKUP_DATE}.zip)" >> "$GITHUB_ENV"
 
       - name: Guardar no repositório privado crmeureka-backups
         env:
@@ -133,6 +134,7 @@ jobs:
               except ValueError:
                   pass
           PYEOF
+          echo "REPO_BYTES=$(du -sb /tmp/privado/backups | cut -f1)" >> "$GITHUB_ENV"
           cd /tmp/privado
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -140,6 +142,36 @@ jobs:
           git diff --staged --quiet || git commit -q -m "backup CRM EUREKA ${BACKUP_DATE}"
           git push --quiet
           echo "Guardado em tucanoverde/crmeureka-backups (privado)."
+
+      - name: Medir capacidade (banco, repositório, ZIP)
+        env:
+          SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import os, requests
+          url = os.environ['SUPABASE_URL']; key = os.environ['SUPABASE_SERVICE_KEY']
+          r = requests.post(f'{url}/rest/v1/rpc/capacidade', headers={'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}, json={}, timeout=60)
+          cap = r.json() if r.status_code == 200 else {}
+          MB = 1024 * 1024
+          banco = cap.get('banco_bytes', 0) / MB; hist = cap.get('historico_bytes', 0) / MB
+          zipb = int(os.environ.get('ZIP_BYTES', '0') or 0) / MB; repo = int(os.environ.get('REPO_BYTES', '0') or 0) / MB
+          LIM_BANCO, LIM_REPO, LIM_ZIP = 8 * 1024, 1024, 20   # MB: plano Pro 8 GB; repositório GitHub 1 GB; anexo de e-mail 20 MB
+          itens = [('Banco de dados', banco, LIM_BANCO), ('Repositório de backups (30 dias)', repo, LIM_REPO), ('ZIP de hoje', zipb, LIM_ZIP)]
+          linhas, alerta = [], False
+          for nome, uso, lim in itens:
+              pct = 100 * uso / lim if lim else 0
+              if pct >= 70: alerta = True
+              nivel = 'ALERTA' if pct >= 70 else ('atencao' if pct >= 50 else 'ok')
+              linhas.append(f'  {nome}: {uso:,.1f} MB de {lim:,.0f} MB ({pct:.1f}%) - {nivel}'.replace(',', '.'))
+          linhas.append(f'  Histórico de alterações: {hist:,.1f} MB, {cap.get("linhas_historico", "?")} linhas · municípios: {cap.get("linhas_municipios", "?")} · usuários: {cap.get("usuarios", "?")}'.replace(',', '.'))
+          txt = 'Capacidade (medida hoje; alerta a partir de 70% do limite):\n' + '\n'.join(linhas)
+          print(txt)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write('CAP_TXT<<CAPEOF\n' + txt + '\nCAPEOF\n')
+              f.write('ALERTA=' + ('1' if alerta else '0') + '\n')
+              f.write('CAP_ASSUNTO=' + ('[ALERTA DE CAPACIDADE] ' if alerta else '') + '\n')
+          PYEOF
 
       - name: Enviar backup por e-mail
         uses: dawidd6/action-send-mail@v3
@@ -149,7 +181,7 @@ jobs:
           secure: true
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Backup CRM EUREKA — ${{ env.BACKUP_DATE }}"
+          subject: "${{ env.CAP_ASSUNTO }}Backup CRM EUREKA — ${{ env.BACKUP_DATE }}"
           to: ${{ secrets.CRMEUREKA_MAIL_TO }}
           from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
           body: |
@@ -159,12 +191,33 @@ jobs:
 
             Anexo: backup-crmeureka-${{ env.BACKUP_DATE }}.zip (${{ env.ZIP_SIZE }})
             Tabelas: municipios, municipios_historico, pipeline_tracking, indicadores_externos,
-            perfis, fontes_dados, reuniao_semanal, configuracoes, atividades.
+            perfis, fontes_dados, reuniao_semanal, configuracoes, atividades, colecoes, anexos.
             Verificação diária contra o banco: OK (todas as tabelas conferidas).
+
+            ${{ env.CAP_TXT }}
 
             ---
             Gerado automaticamente todo dia às 03:30 (Brasília). Em caso de problema, fale com o César.
           attachments: backup-crmeureka-${{ env.BACKUP_DATE }}.zip
+
+      - name: Alerta de capacidade ao César
+        if: env.ALERTA == '1'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "⚠️ CAPACIDADE do CRM EUREKA acima de 70% — ${{ env.BACKUP_DATE }}"
+          to: cesaogolgpt@gmail.com
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            Algum recurso do CRM EUREKA passou de 70% do limite. Medição de hoje:
+
+            ${{ env.CAP_TXT }}
+
+            Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Avisar o César se falhou
         if: failure()
