@@ -194,7 +194,7 @@ jobs:
       - name: Montar relatório final
         if: always()
         run: |
-          { cat /tmp/relatorio.txt 2>/dev/null || echo "(checagens não rodaram)"; echo; echo "Teste de restauração: ${RESTAURACAO:-FALHOU (ver log)}"; cat /tmp/restauracao.txt 2>/dev/null || true; } > /tmp/final.txt
+          { cat /tmp/relatorio.txt 2>/dev/null || echo "(checagens não rodaram)"; echo; echo "Teste de restauração: ${RESTAURACAO:-pulado (só roda na 1ª segunda do mês ou quando forçado)}"; cat /tmp/restauracao.txt 2>/dev/null || true; } > /tmp/final.txt
           echo "ASSUNTO=[${RESULTADO:-FALHA}] Verificação semanal do CRM EUREKA — $(date +%Y-%m-%d)" >> "$GITHUB_ENV"
           cat /tmp/final.txt
 
