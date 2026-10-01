@@ -167,6 +167,18 @@ jobs:
           linhas.append(f'  Histórico de alterações: {hist:,.1f} MB, {cap.get("linhas_historico", "?")} linhas · municípios: {cap.get("linhas_municipios", "?")} · usuários: {cap.get("usuarios", "?")}'.replace(',', '.'))
           txt = 'Capacidade (medida hoje; alerta a partir de 70% do limite):\n' + '\n'.join(linhas)
           print(txt)
+          # variação: compara com a última medição guardada (só ela, sobrescrita a cada dia)
+          import json, datetime as _dt
+          HP = '/tmp/privado/capacidade_ultima.json'
+          try: U = json.load(open(HP, encoding='utf-8'))
+          except Exception: U = {}
+          hoje = os.environ.get('BACKUP_DATE') or _dt.date.today().isoformat()
+          ant_d = U.get('data') if U.get('data') and U.get('data') != hoje else U.get('data_anterior')
+          ANT = U.get('valores', {}) if U.get('data') != hoje else U.get('valores_anteriores', {})
+          novo_U = {'data': hoje, 'valores': {n: round(u, 3) for n, u, _ in itens}}
+          if U.get('data') == hoje: novo_U.update(data_anterior=U.get('data_anterior'), valores_anteriores=U.get('valores_anteriores', {}))
+          else: novo_U.update(data_anterior=U.get('data'), valores_anteriores=U.get('valores', {}))
+          json.dump(novo_U, open(HP, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
           # versão HTML com semáforo (verde < 50%, amarelo 50-70%, vermelho >= 70%)
           def sinal(pct):
               if pct >= 70: return ('#d93025', 'Alerta', '#fce8e6')
@@ -175,6 +187,12 @@ jobs:
           def br(v, d=1): return f'{v:,.{d}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
           def tam(v): return (br(v/1024) + ' GB') if v >= 1024 else (br(v) + ' MB')
           td = 'padding:10px 12px;border-bottom:1px solid #eee;'
+          def var(nome, uso):
+              if nome not in ANT: return '<span style="color:#999;">—</span>'
+              dlt = uso - ANT[nome]
+              if abs(dlt) < 0.05: return '<span style="color:#666;">= 0 MB</span>'
+              seta, cor = ('▲', '#c5221f') if dlt > 0 else ('▼', '#1e8e3e')
+              return f'<span style="color:{cor};font-weight:bold;">{seta} {tam(abs(dlt))}</span>'
           lin = ''
           for nome, uso, lim in itens:
               pct = 100 * uso / lim if lim else 0
@@ -183,14 +201,16 @@ jobs:
               lin += (f'<tr><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:{cor};vertical-align:middle;margin-right:8px;"></span>{nome}</td>'
                       f'<td style="{td}text-align:right;">{tam(uso)}</td><td style="{td}text-align:right;">{tam(lim)}</td>'
                       f'<td style="{td}">{barra}<div style="font-size:12px;color:#555;margin-top:3px;">{br(pct)}%</div></td>'
-                      f'<td style="{td}"><span style="background:{fundo};color:{cor};font-weight:bold;padding:3px 10px;border-radius:10px;font-size:12px;">{rot}</span></td></tr>')
+                      f'<td style="{td}"><span style="background:{fundo};color:{cor};font-weight:bold;padding:3px 10px;border-radius:10px;font-size:12px;">{rot}</span></td>'
+                      f'<td style="{td}text-align:right;white-space:nowrap;">{var(nome, uso)}</td></tr>')
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
                   f'<p style="margin:0 0 12px;"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{geral[0]};vertical-align:middle;margin-right:8px;"></span><b>Situação geral: {geral[1]}</b> <span style="color:#666;">(uso interno Tucano Verde)</span></p>'
                   f'<table style="border-collapse:collapse;min-width:620px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
-                  f'<th style="{th}">Recurso</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th></tr></thead><tbody>{lin}</tbody></table>'
+                  f'<th style="{th}">Recurso</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
                   f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
+                  f'<p style="margin:4px 0;color:#555;font-size:13px;">Variação: diferença desde a medição de {(_dt.date.fromisoformat(ant_d).strftime("%d/%m") if ant_d else "—")} (▲ cresceu, ▼ diminuiu).</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Legenda: <span style="color:#1e8e3e;">●</span> abaixo de 50% · <span style="color:#f9ab00;">●</span> de 50% a 70% · <span style="color:#d93025;">●</span> a partir de 70% (o assunto ganha ⚠️ ALERTA)</p>'
                   f'<p style="margin:4px 0;color:#888;font-size:12px;">Log: https://github.com/{os.environ.get("GITHUB_REPOSITORY", "")}/actions/runs/{os.environ.get("GITHUB_RUN_ID", "")}</p></div>')
           open('/tmp/capacidade.html', 'w', encoding='utf-8').write(html)
@@ -199,6 +219,13 @@ jobs:
               f.write('ALERTA=' + ('1' if alerta else '0') + '\n')
               f.write('CAP_ASSUNTO=' + ('⚠️ ALERTA ' if alerta else '') + '\n')
           PYEOF
+
+      - name: Guardar histórico de capacidade
+        run: |
+          cd /tmp/privado
+          git add capacidade_ultima.json
+          git diff --staged --quiet || git commit -q -m "capacidade CRM EUREKA ${BACKUP_DATE}"
+          git push --quiet || echo 'aviso: histórico de capacidade não foi enviado'
 
       - name: Enviar backup por e-mail
         uses: dawidd6/action-send-mail@v3
