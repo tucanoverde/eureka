@@ -167,6 +167,33 @@ jobs:
           linhas.append(f'  Histórico de alterações: {hist:,.1f} MB, {cap.get("linhas_historico", "?")} linhas · municípios: {cap.get("linhas_municipios", "?")} · usuários: {cap.get("usuarios", "?")}'.replace(',', '.'))
           txt = 'Capacidade (medida hoje; alerta a partir de 70% do limite):\n' + '\n'.join(linhas)
           print(txt)
+          # versão HTML com semáforo (verde < 50%, amarelo 50-70%, vermelho >= 70%)
+          def sinal(pct):
+              if pct >= 70: return ('#d93025', 'Alerta', '#fce8e6')
+              if pct >= 50: return ('#f9ab00', 'Atenção', '#fef7e0')
+              return ('#1e8e3e', 'OK', '#e6f4ea')
+          def br(v, d=1): return f'{v:,.{d}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+          def tam(v): return (br(v/1024) + ' GB') if v >= 1024 else (br(v) + ' MB')
+          td = 'padding:10px 12px;border-bottom:1px solid #eee;'
+          lin = ''
+          for nome, uso, lim in itens:
+              pct = 100 * uso / lim if lim else 0
+              cor, rot, fundo = sinal(pct)
+              barra = f'<div style="background:#eee;border-radius:4px;height:8px;width:140px;"><div style="background:{cor};height:8px;border-radius:4px;width:{max(2, min(pct, 100) * 1.4):.0f}px;"></div></div>'
+              lin += (f'<tr><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:{cor};vertical-align:middle;margin-right:8px;"></span>{nome}</td>'
+                      f'<td style="{td}text-align:right;">{tam(uso)}</td><td style="{td}text-align:right;">{tam(lim)}</td>'
+                      f'<td style="{td}">{barra}<div style="font-size:12px;color:#555;margin-top:3px;">{br(pct)}%</div></td>'
+                      f'<td style="{td}"><span style="background:{fundo};color:{cor};font-weight:bold;padding:3px 10px;border-radius:10px;font-size:12px;">{rot}</span></td></tr>')
+          geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
+          th = 'padding:10px 12px;'
+          html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
+                  f'<p style="margin:0 0 12px;"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{geral[0]};vertical-align:middle;margin-right:8px;"></span><b>Situação geral: {geral[1]}</b> <span style="color:#666;">(uso interno Tucano Verde)</span></p>'
+                  f'<table style="border-collapse:collapse;min-width:620px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
+                  f'<th style="{th}">Recurso</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th></tr></thead><tbody>{lin}</tbody></table>'
+                  f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
+                  f'<p style="margin:4px 0;color:#555;font-size:13px;">Legenda: <span style="color:#1e8e3e;">●</span> abaixo de 50% · <span style="color:#f9ab00;">●</span> de 50% a 70% · <span style="color:#d93025;">●</span> a partir de 70% (o assunto ganha ⚠️ ALERTA)</p>'
+                  f'<p style="margin:4px 0;color:#888;font-size:12px;">Log: https://github.com/{os.environ.get("GITHUB_REPOSITORY", "")}/actions/runs/{os.environ.get("GITHUB_RUN_ID", "")}</p></div>')
+          open('/tmp/capacidade.html', 'w', encoding='utf-8').write(html)
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
               f.write('CAP_TXT<<CAPEOF\n' + txt + '\nCAPEOF\n')
               f.write('ALERTA=' + ('1' if alerta else '0') + '\n')
@@ -209,6 +236,7 @@ jobs:
           subject: "${{ env.CAP_ASSUNTO }}Capacidade CRM EUREKA — ${{ env.BACKUP_DATE }}"
           to: cesaogolgpt@gmail.com
           from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          html_body: file:///tmp/capacidade.html
           body: |
             Medição de hoje (uso interno Tucano Verde; o assunto ganha ALERTA a partir de 70% do limite):
 
