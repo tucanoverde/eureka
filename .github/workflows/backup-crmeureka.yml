@@ -212,11 +212,18 @@ jobs:
                       f'<td style="{td}text-align:right;white-space:nowrap;">{var(nome, uso)}</td></tr>')
           try: alt_hoje = int(cap.get('linhas_historico'))
           except Exception: alt_hoje = None
-          alt_ant = ANT.get('_alteracoes')
+          # compara com o backup do dia anterior (manifesto guarda as linhas do histórico)
+          alt_ant, alt_ant_d = None, None
+          try:
+              _dias = sorted(d for d in os.listdir('/tmp/privado/backups') if len(d) == 10 and d < hoje)
+              if _dias:
+                  alt_ant_d = _dias[-1]
+                  alt_ant = int(json.load(open(f'/tmp/privado/backups/{alt_ant_d}/_manifest.json', encoding='utf-8'))['tabelas']['municipios_historico']['linhas'])
+          except Exception: alt_ant = ANT.get('_alteracoes')
           if alt_hoje is None or alt_ant is None: alt_var = '<span style="color:#999;">—</span>'
-          elif alt_hoje > alt_ant: alt_var = f'<span style="color:#1a73e8;font-weight:bold;">▲ {alt_hoje - alt_ant:,} alterações</span>'.replace(',', '.')
+          elif alt_hoje > alt_ant: alt_var = f'<span style="color:#1a73e8;font-weight:bold;">▲ {alt_hoje - alt_ant:,} alterações</span><div style="font-size:11px;color:#777;">desde {(_dt.date.fromisoformat(alt_ant_d).strftime("%d/%m") if alt_ant_d else "a última medição")}</div>'.replace(',', '.')
           elif alt_hoje < alt_ant: alt_var = f'<span style="color:#c5221f;font-weight:bold;">▼ {alt_ant - alt_hoje:,} linhas</span>'.replace(',', '.')
-          else: alt_var = '<span style="color:#666;">= nenhuma alteração</span>'
+          else: alt_var = '<span style="color:#666;">= nenhuma alteração</span>' + (f'<div style="font-size:11px;color:#777;">desde {_dt.date.fromisoformat(alt_ant_d).strftime("%d/%m")}</div>' if alt_ant_d else '')
           uso_alt = (f'{alt_hoje:,}'.replace(',', '.') + ' linhas') if alt_hoje is not None else '?'
           lin += (f'<tr style="background:#f6f8fc;"><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#1a73e8;vertical-align:middle;margin-right:8px;"></span><b>Alterações no CRM</b></td>'
                   f'<td style="{tdd}">Campos alterados pelos usuários no CRM desde a última medição. É o termômetro de uso: se ficar parado, ninguém mexeu.</td>'
