@@ -176,6 +176,8 @@ jobs:
           ant_d = U.get('data') if U.get('data') and U.get('data') != hoje else U.get('data_anterior')
           ANT = U.get('valores', {}) if U.get('data') != hoje else U.get('valores_anteriores', {})
           novo_U = {'data': hoje, 'valores': {n: round(u, 3) for n, u, _ in itens}}
+          try: novo_U['valores']['_alteracoes'] = int(cap.get('linhas_historico'))
+          except Exception: pass
           if U.get('data') == hoje: novo_U.update(data_anterior=U.get('data_anterior'), valores_anteriores=U.get('valores_anteriores', {}))
           else: novo_U.update(data_anterior=U.get('data'), valores_anteriores=U.get('valores', {}))
           json.dump(novo_U, open(HP, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
@@ -203,6 +205,18 @@ jobs:
                       f'<td style="{td}">{barra}<div style="font-size:12px;color:#555;margin-top:3px;">{br(pct)}%</div></td>'
                       f'<td style="{td}"><span style="background:{fundo};color:{cor};font-weight:bold;padding:3px 10px;border-radius:10px;font-size:12px;">{rot}</span></td>'
                       f'<td style="{td}text-align:right;white-space:nowrap;">{var(nome, uso)}</td></tr>')
+          try: alt_hoje = int(cap.get('linhas_historico'))
+          except Exception: alt_hoje = None
+          alt_ant = ANT.get('_alteracoes')
+          if alt_hoje is None or alt_ant is None: alt_var = '<span style="color:#999;">—</span>'
+          elif alt_hoje > alt_ant: alt_var = f'<span style="color:#1a73e8;font-weight:bold;">▲ {alt_hoje - alt_ant:,} alterações</span>'.replace(',', '.')
+          elif alt_hoje < alt_ant: alt_var = f'<span style="color:#c5221f;font-weight:bold;">▼ {alt_ant - alt_hoje:,} linhas</span>'.replace(',', '.')
+          else: alt_var = '<span style="color:#666;">= nenhuma alteração</span>'
+          uso_alt = (f'{alt_hoje:,}'.replace(',', '.') + ' linhas') if alt_hoje is not None else '?'
+          lin += (f'<tr style="background:#f6f8fc;"><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#1a73e8;vertical-align:middle;margin-right:8px;"></span><b>Alterações no CRM</b></td>'
+                  f'<td style="{td}text-align:right;">{uso_alt}</td><td style="{td}text-align:right;color:#999;">—</td>'
+                  f'<td style="{td}font-size:12px;color:#555;" colspan="2">Campos alterados pelos usuários (histórico)</td>'
+                  f'<td style="{td}text-align:right;white-space:nowrap;">{alt_var}</td></tr>')
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
