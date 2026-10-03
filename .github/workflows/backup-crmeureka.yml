@@ -230,12 +230,24 @@ jobs:
                   f'<td style="{td}text-align:right;">{uso_alt}</td><td style="{td}text-align:right;color:#999;">—</td>'
                   f'<td style="{td}" colspan="2"></td>'
                   f'<td style="{td}text-align:right;white-space:nowrap;">{alt_var}</td></tr>')
+          # quem usou o CRM: autores de alterações nas últimas 24 h
+          usaram = '—'
+          try:
+              _h = {'apikey': key, 'Authorization': f'Bearer {key}'}
+              _desde = (_dt.datetime.utcnow() - _dt.timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
+              _ids = {r.get('alterado_por') for r in requests.get(f'{url}/rest/v1/municipios_historico?select=alterado_por&alterado_em=gte.{_desde}&limit=20000', headers=_h, timeout=60).json() if r.get('alterado_por')}
+              if _ids:
+                  _pf = requests.get(f'{url}/rest/v1/perfis?select=id,nome,email&id=in.(' + ','.join(_ids) + ')', headers=_h, timeout=60).json()
+                  usaram = ';'.join(sorted((x.get('nome') or x.get('email') or '?') for x in _pf)) or '—'
+              else: usaram = 'ninguém'
+          except Exception as e: usaram = f'(não foi possível consultar: {e})'
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
                   f'<p style="margin:0 0 12px;"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{geral[0]};vertical-align:middle;margin-right:8px;"></span><b>Situação geral: {geral[1]}</b> <span style="color:#666;">(uso interno Tucano Verde)</span></p>'
                   f'<table style="border-collapse:collapse;min-width:860px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
                   f'<th style="{th}">Recurso</th><th style="{th}">O que é</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
+                  f'<div style="margin:14px 0 6px;padding:10px 12px;background:#f6f8fc;border-left:4px solid #1a73e8;"><b>Quem usou o CRM (últimas 24 h):</b> {usaram}</div>'
                   f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Variação: diferença desde a medição de {(_dt.date.fromisoformat(ant_d).strftime("%d/%m") if ant_d else "—")} (▲ cresceu, ▼ diminuiu).</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Legenda: <span style="color:#1e8e3e;">●</span> abaixo de 50% · <span style="color:#f9ab00;">●</span> de 50% a 70% · <span style="color:#d93025;">●</span> a partir de 70% (o assunto ganha ⚠️ ALERTA)</p>'
