@@ -195,12 +195,17 @@ jobs:
               if abs(dlt) < 0.05: return '<span style="color:#666;">= 0 MB</span>'
               seta, cor = ('▲', '#c5221f') if dlt > 0 else ('▼', '#1e8e3e')
               return f'<span style="color:{cor};font-weight:bold;">{seta} {tam(abs(dlt))}</span>'
+          DESC = {'Banco de dados': 'Espaço ocupado pelo CRM no Supabase (municípios, histórico, usuários). Cresce devagar e em blocos; não serve para medir uso diário.',
+                  'Repositório de backups (30 dias)': 'Cópias diárias guardadas no GitHub privado. Cresce um backup por dia e estabiliza no 30º, quando os mais antigos são apagados.',
+                  'ZIP de hoje': 'Arquivo compactado do backup do dia, anexado ao e-mail de backup. O Gmail recusa anexos acima de 20 MB.'}
+          tdd = 'padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;max-width:260px;'
           lin = ''
           for nome, uso, lim in itens:
               pct = 100 * uso / lim if lim else 0
               cor, rot, fundo = sinal(pct)
               barra = f'<div style="background:#eee;border-radius:4px;height:8px;width:140px;"><div style="background:{cor};height:8px;border-radius:4px;width:{max(2, min(pct, 100) * 1.4):.0f}px;"></div></div>'
               lin += (f'<tr><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:{cor};vertical-align:middle;margin-right:8px;"></span>{nome}</td>'
+                      f'<td style="{tdd}">{DESC.get(nome, "")}</td>'
                       f'<td style="{td}text-align:right;">{tam(uso)}</td><td style="{td}text-align:right;">{tam(lim)}</td>'
                       f'<td style="{td}">{barra}<div style="font-size:12px;color:#555;margin-top:3px;">{br(pct)}%</div></td>'
                       f'<td style="{td}"><span style="background:{fundo};color:{cor};font-weight:bold;padding:3px 10px;border-radius:10px;font-size:12px;">{rot}</span></td>'
@@ -214,15 +219,16 @@ jobs:
           else: alt_var = '<span style="color:#666;">= nenhuma alteração</span>'
           uso_alt = (f'{alt_hoje:,}'.replace(',', '.') + ' linhas') if alt_hoje is not None else '?'
           lin += (f'<tr style="background:#f6f8fc;"><td style="{td}"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#1a73e8;vertical-align:middle;margin-right:8px;"></span><b>Alterações no CRM</b></td>'
+                  f'<td style="{tdd}">Campos alterados pelos usuários no CRM desde a última medição. É o termômetro de uso: se ficar parado, ninguém mexeu.</td>'
                   f'<td style="{td}text-align:right;">{uso_alt}</td><td style="{td}text-align:right;color:#999;">—</td>'
-                  f'<td style="{td}font-size:12px;color:#555;" colspan="2">Campos alterados pelos usuários (histórico)</td>'
+                  f'<td style="{td}" colspan="2"></td>'
                   f'<td style="{td}text-align:right;white-space:nowrap;">{alt_var}</td></tr>')
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
                   f'<p style="margin:0 0 12px;"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{geral[0]};vertical-align:middle;margin-right:8px;"></span><b>Situação geral: {geral[1]}</b> <span style="color:#666;">(uso interno Tucano Verde)</span></p>'
-                  f'<table style="border-collapse:collapse;min-width:620px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
-                  f'<th style="{th}">Recurso</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
+                  f'<table style="border-collapse:collapse;min-width:860px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
+                  f'<th style="{th}">Recurso</th><th style="{th}">O que é</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
                   f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Variação: diferença desde a medição de {(_dt.date.fromisoformat(ant_d).strftime("%d/%m") if ant_d else "—")} (▲ cresceu, ▼ diminuiu).</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Legenda: <span style="color:#1e8e3e;">●</span> abaixo de 50% · <span style="color:#f9ab00;">●</span> de 50% a 70% · <span style="color:#d93025;">●</span> a partir de 70% (o assunto ganha ⚠️ ALERTA)</p>'
