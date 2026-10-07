@@ -134,7 +134,6 @@ jobs:
               except ValueError:
                   pass
           PYEOF
-          echo "REPO_BYTES=$(du -sb /tmp/privado/backups | cut -f1)" >> "$GITHUB_ENV"
           cd /tmp/privado
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -142,6 +141,9 @@ jobs:
           git diff --staged --quiet || git commit -q -m "backup CRM EUREKA ${BACKUP_DATE}"
           git push --quiet
           echo "Guardado em tucanoverde/crmeureka-backups (privado)."
+          # tamanho REAL do repositório (compactado, como o GitHub conta), não a soma dos JSON descompactados
+          KB=$(git count-objects -v | awk '/^size:/{s=$2} /^size-pack:/{p=$2} END{print s+p}')
+          echo "REPO_BYTES=$(( KB * 1024 ))" >> "$GITHUB_ENV"
 
       - name: Medir capacidade (banco, repositório, ZIP)
         env:
@@ -196,7 +198,7 @@ jobs:
               seta, cor = ('▲', '#c5221f') if dlt > 0 else ('▼', '#1e8e3e')
               return f'<span style="color:{cor};font-weight:bold;">{seta} {tam(abs(dlt))}</span>'
           DESC = {'Banco de dados': 'Espaço ocupado pelo CRM no Supabase (municípios, histórico, usuários). Cresce devagar e em blocos; não serve para medir uso diário.',
-                  'Repositório de backups (30 dias)': 'Cópias diárias guardadas no GitHub privado. Cresce um backup por dia e estabiliza no 30º, quando os mais antigos são apagados.',
+                  'Repositório de backups (30 dias)': 'Espaço real ocupado pelas cópias diárias no GitHub privado (compactado). Como de um dia para o outro quase nada muda, cresce pouco.',
                   'ZIP de hoje': 'Arquivo compactado do backup do dia, anexado ao e-mail de backup. O Gmail recusa anexos acima de 20 MB.'}
           tdd = 'padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;max-width:260px;'
           lin = ''
