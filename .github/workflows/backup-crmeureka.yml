@@ -243,6 +243,36 @@ jobs:
                   usaram = ';'.join(sorted((x.get('nome') or x.get('email') or '?') for x in _pf)) or '—'
               else: usaram = 'ninguém'
           except Exception as e: usaram = f'(não foi possível consultar: {e})'
+          # gráfico: alterações acumuladas dia a dia (últimos 30 dias); conta a partir de 26/09/2026, depois da carga inicial de 25/09
+          grafico = ''
+          try:
+              _h = {'apikey': key, 'Authorization': f'Bearer {key}'}
+              _dias, _off = {}, 0
+              while True:
+                  _r = requests.get(f'{url}/rest/v1/municipios_historico?select=alterado_em&alterado_em=gte.2026-09-26T03:00:00&order=alterado_em', headers={**_h, 'Range': f'{_off}-{_off+999}'}, timeout=60).json()
+                  for x in _r:
+                      _d = (_dt.datetime.fromisoformat(x['alterado_em'][:19]) - _dt.timedelta(hours=3)).date()
+                      _dias[_d] = _dias.get(_d, 0) + 1
+                  if len(_r) < 1000: break
+                  _off += 1000
+              _fim = _dt.date.fromisoformat(hoje) - _dt.timedelta(days=1)
+              _ini = _fim - _dt.timedelta(days=29)
+              _acc = sum(v for d, v in _dias.items() if d < _ini)
+              _serie = []
+              for i in range(30):
+                  _d = _ini + _dt.timedelta(days=i); _acc += _dias.get(_d, 0); _serie.append((_d, _acc, _dias.get(_d, 0)))
+              _mx = max(a for _, a, _ in _serie) or 1
+              _cel = ''
+              for _d, _a, _n in _serie:
+                  _hgt = max(1, round(140 * _a / _mx)) if _a else 0
+                  _cel += (f'<td style="vertical-align:bottom;text-align:center;padding:0 2px;width:24px;" title="{_d.strftime("%d/%m")}: +{_n} no dia, {_a} acumuladas">'
+                           f'<div style="font-size:9px;color:#555;">{_a if _a else ""}</div>'
+                           f'<div style="height:{_hgt}px;background:{"#1a73e8" if _n else "#9fc1f5"};"></div></td>')
+              _rot = ''.join(f'<td style="font-size:9px;color:#888;text-align:center;padding-top:3px;">{_d.strftime("%d/%m") if (i % 3 == 0 or i == 29) else ""}</td>' for i, (_d, _, _) in enumerate(_serie))
+              grafico = (f'<p style="margin:16px 0 6px;"><b>Uso do CRM: alterações acumuladas, dia a dia (últimos 30 dias)</b></p>'
+                         f'<table style="border-collapse:collapse;border-bottom:1px solid #ccc;"><tr style="height:160px;">{_cel}</tr><tr>{_rot}</tr></table>'
+                         f'<p style="margin:4px 0;color:#555;font-size:12px;">Total acumulado desde 26/09 (a carga inicial de 25/09 não entra). Azul escuro = dia com alterações; azul claro = dia parado.</p>')
+          except Exception as e: grafico = f'<p style="color:#888;font-size:12px;">(gráfico de uso indisponível: {e})</p>'
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
@@ -250,6 +280,7 @@ jobs:
                   f'<table style="border-collapse:collapse;min-width:860px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
                   f'<th style="{th}">Recurso</th><th style="{th}">O que é</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
                   f'<div style="margin:14px 0 6px;padding:10px 12px;background:#f6f8fc;border-left:4px solid #1a73e8;"><b>Quem usou o CRM (últimas 24 h):</b> {usaram}</div>'
+                  f'{grafico}'
                   f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Variação: diferença desde a medição de {(_dt.date.fromisoformat(ant_d).strftime("%d/%m") if ant_d else "—")} (▲ cresceu, ▼ diminuiu).</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Legenda: <span style="color:#1e8e3e;">●</span> abaixo de 50% · <span style="color:#f9ab00;">●</span> de 50% a 70% · <span style="color:#d93025;">●</span> a partir de 70% (o assunto ganha ⚠️ ALERTA)</p>'
