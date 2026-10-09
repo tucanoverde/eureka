@@ -21,7 +21,19 @@ env:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    services:
+      pg:   # banco DESCARTÁVEL, só existe durante esta execução: recebe a restauração de teste
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: teste
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
+      - name: Scripts do backup
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/crmeureka
+
       - name: Python
         uses: actions/setup-python@v5
         with:
@@ -44,7 +56,7 @@ jobs:
           assert os.environ['REF_ESPERADO'] in url, 'CRMEUREKA_SUPABASE_URL nao e o projeto crmeureka - abortando (anticontaminacao)'
           headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
           tabelas = ['municipios','municipios_historico','pipeline_tracking','indicadores_externos',
-                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos']
+                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos','acessos_autorizados']
           data = os.environ['BACKUP_DATE']; pasta = f'backups/{data}'
           os.makedirs(pasta, exist_ok=True)
           resumo = []
@@ -78,7 +90,7 @@ jobs:
           print('Backup completo:', data)
           PYEOF
 
-      - name: Check diário — backup x banco vivo (9 tabelas)
+      - name: Check diário — backup x banco vivo (todas as tabelas)
         env:
           SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
@@ -104,6 +116,65 @@ jobs:
           if falhas:
               print('\nDIVERGENCIA em:', falhas); sys.exit(1)
           PYEOF
+
+      - name: Cliente PostgreSQL 17
+        run: |
+          sudo apt-get install -y -qq postgresql-common >/dev/null
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null 2>&1
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Cópia completa do banco (estrutura, regras, funções, dados e logins)
+        env:
+          PGHOST: ${{ secrets.CRMEUREKA_PGHOST }}
+          PGUSER: ${{ secrets.CRMEUREKA_PGUSER }}
+          PGPASSWORD: ${{ secrets.CRMEUREKA_DB_PASSWORD }}
+          PGDATABASE: postgres
+          PGSSLMODE: require
+        run: |
+          set -e
+          B="backups/${BACKUP_DATE}/banco_completo"; mkdir -p "$B"
+          # assinatura antes e depois da cópia: se alguém mexeu no meio, repete (a cópia tem de ser um retrato único)
+          for i in 1 2 3; do
+            psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_antes.txt
+            pg_dump -n public --no-owner -f "$B/public.sql"
+            pg_dump -n auth -s --no-owner --no-privileges -f "$B/auth_estrutura.sql"
+            pg_dump -a -t auth.users -t auth.identities --no-owner -f "$B/auth_logins.sql"
+            psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_depois.txt
+            if cmp -s /tmp/sig_antes.txt /tmp/sig_depois.txt; then break; fi
+            echo "o banco mudou durante a cópia; repetindo ($i)"; sleep 30
+          done
+          cmp -s /tmp/sig_antes.txt /tmp/sig_depois.txt || { echo 'ERRO: banco mudou nas 3 tentativas'; exit 1; }
+          cp /tmp/sig_depois.txt "$B/assinatura_oficial.txt"
+          echo "SIG_ITENS=$(wc -l < "$B/assinatura_oficial.txt")" >> "$GITHUB_ENV"
+          # trava: nenhuma tabela do banco pode ficar fora da exportação JSON
+          FALTA=$(psql -At -X -c "select tablename from pg_tables where schemaname='public' order by 1" | while read t; do [ -f "backups/${BACKUP_DATE}/$t.json" ] || echo "$t"; done)
+          if [ -n "$FALTA" ]; then echo "ERRO: tabelas fora do backup JSON: $FALTA"; exit 1; fi
+          ls -lh "$B"
+
+      - name: Teste de restauração (banco descartável) e comparação com o oficial
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: teste
+          PGDATABASE: postgres
+        run: |
+          B="backups/${BACKUP_DATE}/banco_completo"
+          ok=1
+          for f in .github/crmeureka/prepara_restauracao.sql "$B/auth_estrutura.sql" "$B/public.sql" "$B/auth_logins.sql"; do
+            psql -q -X -v ON_ERROR_STOP=1 -f "$f" > /tmp/restaura.log 2>&1 || { echo "falhou ao restaurar $f"; tail -20 /tmp/restaura.log; ok=0; break; }
+          done
+          if [ $ok = 1 ]; then
+            psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_restaurado.txt
+            if diff "$B/assinatura_oficial.txt" /tmp/sig_restaurado.txt > /tmp/diff.txt; then
+              echo "Restauração IDÊNTICA ao oficial ($(wc -l < /tmp/sig_restaurado.txt) itens comparados)"
+            else
+              ok=0; echo "Restauração DIFERENTE do oficial:"; head -40 /tmp/diff.txt
+            fi
+          fi
+          cp /tmp/diff.txt "$B/restauracao_diferencas.txt" 2>/dev/null || true
+          echo "RESTAURA_OK=$ok" >> "$GITHUB_ENV"
+          { echo 'RESTAURA_DIFF<<RDEOF'; head -15 /tmp/diff.txt 2>/dev/null || tail -5 /tmp/restaura.log; echo; echo 'RDEOF'; } >> "$GITHUB_ENV"
 
       - name: Compactar (nome com o tenant)
         run: |
@@ -273,6 +344,13 @@ jobs:
                          f'<table style="border-collapse:collapse;border-bottom:1px solid #ccc;"><tr style="height:160px;">{_cel}</tr><tr>{_rot}</tr></table>'
                          f'<p style="margin:4px 0;color:#555;font-size:12px;">Total acumulado desde 26/09 (a carga inicial de 25/09 não entra). Azul escuro = dia com alterações; azul claro = dia parado.</p>')
           except Exception as e: grafico = f'<p style="color:#888;font-size:12px;">(gráfico de uso indisponível: {e})</p>'
+          # teste de restauração de hoje
+          rest_ok = os.environ.get('RESTAURA_OK') == '1'
+          if not rest_ok: alerta = True
+          import html as _html
+          rest = (f'<div style="margin:14px 0 6px;padding:10px 12px;background:#e6f4ea;border-left:4px solid #1e8e3e;"><b>Restauração testada hoje: ✅ idêntica ao oficial</b> — o backup foi restaurado num banco descartável e comparado item a item ({os.environ.get("SIG_ITENS", "?")} itens: dados de todas as tabelas, logins, colunas, regras de acesso, funções, automações e permissões).</div>'
+                  if rest_ok else
+                  f'<div style="margin:14px 0 6px;padding:10px 12px;background:#fce8e6;border-left:4px solid #d93025;"><b>Restauração testada hoje: ❌ NÃO ficou idêntica</b> — veja o log. Primeiras diferenças:<pre style="font-size:11px;white-space:pre-wrap;">{_html.escape(os.environ.get("RESTAURA_DIFF", "(sem detalhe)"))}</pre></div>')
           geral = sinal(max((100 * u / l if l else 0) for _, u, l in itens))
           th = 'padding:10px 12px;'
           html = (f'<div style="font-family:Arial,Helvetica,sans-serif;color:#222;font-size:14px;">'
@@ -280,6 +358,7 @@ jobs:
                   f'<table style="border-collapse:collapse;min-width:860px;"><thead><tr style="background:#233E94;color:#fff;text-align:left;">'
                   f'<th style="{th}">Recurso</th><th style="{th}">O que é</th><th style="{th}text-align:right;">Uso</th><th style="{th}text-align:right;">Limite</th><th style="{th}">Ocupação</th><th style="{th}">Sinal</th><th style="{th}text-align:right;">Variação</th></tr></thead><tbody>{lin}</tbody></table>'
                   f'<div style="margin:14px 0 6px;padding:10px 12px;background:#f6f8fc;border-left:4px solid #1a73e8;"><b>Quem usou o CRM (últimas 24 h):</b> {usaram}</div>'
+                  f'{rest}'
                   f'{grafico}'
                   f'<p style="margin:12px 0 4px;color:#555;font-size:13px;">Histórico de alterações: {br(hist)} MB, {cap.get("linhas_historico", "?")} linhas · Registros: {cap.get("linhas_municipios", "?")} · Usuários: {cap.get("usuarios", "?")}</p>'
                   f'<p style="margin:4px 0;color:#555;font-size:13px;">Variação: diferença desde a medição de {(_dt.date.fromisoformat(ant_d).strftime("%d/%m") if ant_d else "—")} (▲ cresceu, ▼ diminuiu).</p>'
