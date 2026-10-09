@@ -138,7 +138,9 @@ jobs:
           # assinatura antes e depois da cópia: se alguém mexeu no meio, repete (a cópia tem de ser um retrato único)
           for i in 1 2 3; do
             psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_antes.txt
-            pg_dump -n public --no-owner -f "$B/public.sql"
+            pg_dump -n public --no-owner --section=pre-data -f "$B/crm_1_estrutura.sql"
+            pg_dump -n public --no-owner --section=data -f "$B/crm_2_dados.sql"
+            pg_dump -n public --no-owner --section=post-data -f "$B/crm_3_regras_indices_automacoes.sql"
             pg_dump -n auth -s --section=pre-data --no-owner --no-privileges -f "$B/auth_estrutura.sql"
             pg_dump -n auth -s --section=post-data --no-owner --no-privileges -f "$B/auth_indices_e_automacoes.sql"
             pg_dump -a -t auth.users -t auth.identities --no-owner -f "$B/auth_logins.sql"
@@ -164,7 +166,7 @@ jobs:
           B="backups/${BACKUP_DATE}/banco_completo"
           ok=1
           # ordem: tabelas de login vazias -> logins -> CRM inteiro -> índices e automações dos logins
-          for f in .github/crmeureka/prepara_restauracao.sql "$B/auth_estrutura.sql" "$B/auth_logins.sql" "$B/public.sql" "$B/auth_indices_e_automacoes.sql"; do
+          for f in .github/crmeureka/prepara_restauracao.sql "$B/auth_estrutura.sql" "$B/auth_logins.sql" "$B/crm_1_estrutura.sql" "$B/crm_2_dados.sql" "$B/auth_indices_e_automacoes.sql" "$B/crm_3_regras_indices_automacoes.sql"; do
             psql -q -X -v ON_ERROR_STOP=1 -f "$f" > /tmp/restaura.log 2>&1 || { echo "falhou ao restaurar $f"; tail -20 /tmp/restaura.log; ok=0; break; }
           done
           if [ $ok = 1 ]; then
