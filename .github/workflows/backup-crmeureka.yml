@@ -139,7 +139,8 @@ jobs:
           for i in 1 2 3; do
             psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_antes.txt
             pg_dump -n public --no-owner -f "$B/public.sql"
-            pg_dump -n auth -s --no-owner --no-privileges -f "$B/auth_estrutura.sql"
+            pg_dump -n auth -s --section=pre-data --no-owner --no-privileges -f "$B/auth_estrutura.sql"
+            pg_dump -n auth -s --section=post-data --no-owner --no-privileges -f "$B/auth_indices_e_automacoes.sql"
             pg_dump -a -t auth.users -t auth.identities --no-owner -f "$B/auth_logins.sql"
             psql -q -X -f .github/crmeureka/assinatura.sql > /tmp/sig_depois.txt
             if cmp -s /tmp/sig_antes.txt /tmp/sig_depois.txt; then break; fi
@@ -162,7 +163,8 @@ jobs:
         run: |
           B="backups/${BACKUP_DATE}/banco_completo"
           ok=1
-          for f in .github/crmeureka/prepara_restauracao.sql "$B/auth_estrutura.sql" "$B/public.sql" "$B/auth_logins.sql"; do
+          # ordem: tabelas de login vazias -> logins -> CRM inteiro -> índices e automações dos logins
+          for f in .github/crmeureka/prepara_restauracao.sql "$B/auth_estrutura.sql" "$B/auth_logins.sql" "$B/public.sql" "$B/auth_indices_e_automacoes.sql"; do
             psql -q -X -v ON_ERROR_STOP=1 -f "$f" > /tmp/restaura.log 2>&1 || { echo "falhou ao restaurar $f"; tail -20 /tmp/restaura.log; ok=0; break; }
           done
           if [ $ok = 1 ]; then
