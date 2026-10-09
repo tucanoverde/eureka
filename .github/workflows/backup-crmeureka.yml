@@ -125,6 +125,7 @@ jobs:
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Cópia completa do banco (estrutura, regras, funções, dados e logins)
+        continue-on-error: true   # se falhar, o backup JSON de sempre continua e o e-mail acusa ❌
         env:
           PGHOST: ${{ secrets.CRMEUREKA_PGHOST }}
           PGUSER: ${{ secrets.CRMEUREKA_PGUSER }}
