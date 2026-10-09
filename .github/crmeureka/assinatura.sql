@@ -33,4 +33,4 @@ insert into _sig select 'permissao '||table_name||' '||grantee, string_agg(privi
   from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated','service_role')
  group by table_name, grantee;
 insert into _sig select 'sequencia '||sequencename, coalesce(last_value::text,'nula') from pg_sequences where schemaname='public';
-select k||' = '||v from _sig order by k;
+select k||' = '||v from _sig order by k collate "C";
