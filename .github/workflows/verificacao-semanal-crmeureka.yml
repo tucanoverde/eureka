@@ -126,8 +126,13 @@ jobs:
                      and x['event'] in ('schedule', 'workflow_dispatch') and x['status'] == 'completed']
               suc = [x for x in rec if x['conclusion'] == 'success']
               agd = [x for x in rec if x['event'] == 'schedule']
-              # exige ao menos 1 execução com sucesso na semana e nenhuma falha (na 1ª semana pode ser só manual)
-              (ok if rec and len(suc) == len(rec) else falha)(f"E1 backups na semana: {len(suc)}/{len(rec)} com sucesso ({len(agd)} agendados, {len(rec)-len(agd)} manuais; e-mail sai só em sucesso)")
+              # falha = algum backup AGENDADO (o das 02:00) falhou, ou nenhum sucesso na semana.
+              # execução manual que falhou (teste de ajuste) só é citada; não reprova se houve sucesso depois dela.
+              agd_falha = [x for x in agd if x['conclusion'] != 'success']
+              man_falha = [x for x in rec if x['event'] != 'schedule' and x['conclusion'] != 'success'
+                           and not any(y['conclusion'] == 'success' and y['created_at'] > x['created_at'] for y in rec)]
+              nota = f"; {len(rec)-len(suc)} manual(is) com falha corrigida(s) em seguida" if len(suc) < len(rec) and not agd_falha and not man_falha else ''
+              (ok if suc and not agd_falha and not man_falha else falha)(f"E1 backups na semana: {len(agd)-len(agd_falha)}/{len(agd)} agendados com sucesso, {len(rec)-len(agd)} manuais{nota}")
           except Exception as e: falha(f"E1 não consegui ler os runs: {e}")
           rel = f"Verificação semanal — {os.environ['TENANT_LABEL']} — {hoje.isoformat()}\n\n" + '\n'.join(R)
           print(rel)
@@ -194,7 +199,7 @@ jobs:
       - name: Montar relatório final
         if: always()
         run: |
-          { cat /tmp/relatorio.txt 2>/dev/null || echo "(checagens não rodaram)"; echo; echo "Teste de restauração: ${RESTAURACAO:-pulado (só roda na 1ª segunda do mês ou quando forçado)}"; cat /tmp/restauracao.txt 2>/dev/null || true; } > /tmp/final.txt
+          { cat /tmp/relatorio.txt 2>/dev/null || echo "(checagens não rodaram)"; echo; echo "Teste de restauração COMPLETO (banco inteiro, 397 itens): roda TODO DIA no backup das 02:00; resultado no e-mail diário de capacidade."; echo "Teste de restauração mensal dos JSON: ${RESTAURACAO:-pulado (só roda na 1ª segunda do mês ou quando forçado)}"; cat /tmp/restauracao.txt 2>/dev/null || true; } > /tmp/final.txt
           echo "ASSUNTO=[${RESULTADO:-FALHA}] Verificação semanal do CRM EUREKA — $(date +%Y-%m-%d)" >> "$GITHUB_ENV"
           cat /tmp/final.txt
 
