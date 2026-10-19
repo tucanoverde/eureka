@@ -100,7 +100,10 @@ jobs:
           # C1 base pública íntegra
           muni = json.load(open(f'{P}/municipios.json', encoding='utf-8'))
           n = len(muni); ibge = {r.get('codigo_ibge') for r in muni}; ufs = {r.get('uf') for r in muni}
-          nulos = sum(1 for r in muni for c in ('municipio', 'uf', 'ef1_alunos', 'ef2_alunos', 'latitude', 'longitude') if r.get(c) in (None, ''))
+          # alunos só são obrigatórios nos registros do Censo (código IBGE numérico ou UF-XX);
+          # áreas cadastradas à mão (ex.: UF-PR-DETRAN) não têm dado do INEP e o André preenche caso a caso
+          def censo(r): c = r.get('codigo_ibge') or ''; return c.isdigit() or (c.startswith('UF-') and len(c) == 5)
+          nulos = sum(1 for r in muni for c in ('municipio', 'uf', 'latitude', 'longitude') + (('ef1_alunos', 'ef2_alunos') if censo(r) else ()) if r.get(c) in (None, ''))
           c1 = 5560 <= n <= 5600 and len(ibge) == n and len(ufs) == 27 and nulos == 0
           (ok if c1 else falha)(f"C1 base pública: {n} municípios, {len(ibge)} IBGE únicos, {len(ufs)} UFs, {nulos} nulos em colunas-chave")
           # C2 não-decrescimento das tabelas de INPUT vs 7 dias atrás (perda silenciosa)
