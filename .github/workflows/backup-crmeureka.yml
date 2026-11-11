@@ -56,7 +56,7 @@ jobs:
           assert os.environ['REF_ESPERADO'] in url, 'CRMEUREKA_SUPABASE_URL nao e o projeto crmeureka - abortando (anticontaminacao)'
           headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
           tabelas = ['municipios','municipios_historico','pipeline_tracking','indicadores_externos',
-                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos','acessos_autorizados']
+                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos','acessos_autorizados','cobrancas']
           data = os.environ['BACKUP_DATE']; pasta = f'backups/{data}'
           os.makedirs(pasta, exist_ok=True)
           resumo = []
