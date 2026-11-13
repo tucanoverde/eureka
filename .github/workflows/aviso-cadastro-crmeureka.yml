@@ -1,0 +1,55 @@
+name: Aviso de novo cadastro — CRM EUREKA
+# Pedido do César 11/11/2026 (feito em 13/11): a cada novo cadastro aguardando aprovação no CRM EUREKA
+# (crmeureka.tucanoverde.com, ref kibkldlvialhxwobkoko), avisa o André por e-mail. Um aviso por pessoa (tabela cadastro_avisos).
+# Não toca no CRM Redesa.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  aviso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar cadastros pendentes e avisar o André
+        env:
+          SUPABASE_URL: ${{ secrets.CRMEUREKA_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.CRMEUREKA_SUPABASE_SERVICE_KEY }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+        run: |
+          python3 << 'PYEOF'
+          import os, requests, smtplib, html
+          from email.mime.text import MIMEText
+          from datetime import datetime, timezone, timedelta
+          url = os.environ['SUPABASE_URL']; key = os.environ['SUPABASE_SERVICE_KEY']
+          assert 'kibkldlvialhxwobkoko' in url, 'nao e o CRM EUREKA - abortando'
+          h = {'apikey': key, 'Authorization': f'Bearer {key}'}
+          pend = requests.get(f'{url}/rest/v1/perfis', headers=h, params={'select': 'id,nome,email,criado_em', 'aprovado': 'is.false'}, timeout=60).json()
+          pend += requests.get(f'{url}/rest/v1/perfis', headers=h, params={'select': 'id,nome,email,criado_em', 'aprovado': 'is.null'}, timeout=60).json()
+          ja = {x['user_id'] for x in requests.get(f'{url}/rest/v1/cadastro_avisos', headers=h, params={'select': 'user_id'}, timeout=60).json()}
+          novos = [p for p in pend if p['id'] not in ja]
+          print('pendentes:', len(pend), 'novos:', len(novos))
+          if not novos: raise SystemExit(0)
+          brt = timezone(timedelta(hours=-3))
+          def quando(s):
+              try: return datetime.fromisoformat(s.replace('Z', '+00:00')).astimezone(brt).strftime('%d/%m/%Y às %H:%M')
+              except Exception: return s or '—'
+          linhas = ''.join(f'<li><b>{html.escape(p.get("nome") or "(sem nome)")}</b> — {html.escape(p.get("email") or "")} — cadastrado em {quando(p.get("criado_em"))}</li>' for p in novos)
+          um = len(novos) == 1
+          corpo = (f'<p>André, {"uma nova pessoa se cadastrou" if um else str(len(novos)) + " novas pessoas se cadastraram"} no CRM Eureka e '
+                   f'{"aguarda" if um else "aguardam"} a sua aprovação:</p><ul>{linhas}</ul>'
+                   '<p>Para liberar: entre em <a href="https://crmeureka.tucanoverde.com">crmeureka.tucanoverde.com</a>, menu <b>Aprovações</b>, escolha o perfil e clique em Aprovar.</p>'
+                   '<p style="color:#777;font-size:12px;">Aviso automático do CRM Eureka. Dúvidas: suporte@tucanoverde.com.</p>')
+          msg = MIMEText(corpo, 'html', 'utf-8')
+          msg['Subject'] = 'CRM Eureka — novo cadastro aguardando aprovação' if um else f'CRM Eureka — {len(novos)} novos cadastros aguardando aprovação'
+          msg['From'] = f'CRM Eureka <{os.environ["MAIL_USERNAME"]}>'
+          msg['To'] = 'andre.pereira@grupoeureka.com.br'
+          with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+              s.login(os.environ['MAIL_USERNAME'], os.environ['MAIL_PASSWORD'])
+              s.send_message(msg)
+          r = requests.post(f'{url}/rest/v1/cadastro_avisos', headers={**h, 'Content-Type': 'application/json', 'Prefer': 'resolution=ignore-duplicates'},
+                            json=[{'user_id': p['id'], 'email': p.get('email')} for p in novos], timeout=60)
+          r.raise_for_status(); print('avisado:', [p.get('email') for p in novos])
+          PYEOF
