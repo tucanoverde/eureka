@@ -56,7 +56,7 @@ jobs:
           assert os.environ['REF_ESPERADO'] in url, 'CRMEUREKA_SUPABASE_URL nao e o projeto crmeureka - abortando (anticontaminacao)'
           headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
           tabelas = ['municipios','municipios_historico','pipeline_tracking','indicadores_externos',
-                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos','acessos_autorizados','cobrancas']
+                     'perfis','fontes_dados','reuniao_semanal','configuracoes','atividades','colecoes','anexos','acessos_autorizados','cobrancas','reuniao_semanal_log']
           data = os.environ['BACKUP_DATE']; pasta = f'backups/{data}'
           os.makedirs(pasta, exist_ok=True)
           resumo = []
@@ -412,6 +412,33 @@ jobs:
             ---
             Gerado automaticamente todo dia às 03:30 (Brasília). Em caso de problema, fale com o César.
           attachments: backup-crmeureka-${{ env.BACKUP_DATE }}.zip
+
+      - name: Backup só com os dados (sem logins) para o André
+        run: |
+          cd "backups/${BACKUP_DATE}" && zip -q "../../dados-crmeureka-${BACKUP_DATE}.zip" *.json _resumo.txt _verificacao.txt -x acessos_autorizados.json _manifest.json && cd ../..
+          echo "ZIP_DADOS_SIZE=$(du -h dados-crmeureka-${BACKUP_DATE}.zip | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: Enviar backup dos dados ao André
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Backup CRM Eureka (dados) — ${{ env.BACKUP_DATE }}"
+          to: andre.pereira@grupoeureka.com.br
+          from: "CRM Eureka <${{ secrets.MAIL_USERNAME }}>"
+          body: |
+            Backup automático dos dados do CRM Eureka (crmeureka.tucanoverde.com) de ${{ env.BACKUP_DATE }}.
+
+            Anexo: dados-crmeureka-${{ env.BACKUP_DATE }}.zip (${{ env.ZIP_DADOS_SIZE }}), um arquivo .json por tabela
+            (municípios, histórico, reunião semanal, atividades, cobranças e demais).
+            O backup foi conferido hoje contra o banco e restaurado em teste: OK.
+
+            ---
+            Enviado todo dia às 03:30 (Brasília). Dúvidas: suporte@tucanoverde.com.
+          attachments: dados-crmeureka-${{ env.BACKUP_DATE }}.zip
 
       - name: Capacidade — e-mail diário só para o César
         uses: dawidd6/action-send-mail@v3
